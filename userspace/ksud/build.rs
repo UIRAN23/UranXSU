@@ -23,14 +23,31 @@ fn get_git_version() -> Result<(u32, String), std::io::Error> {
         .map_err(|_| std::io::Error::other("Failed to parse git count"))?;
     let version_code = 30000 + 700 + version_code; // For historical reasons
 
-    let version_name = String::from_utf8(
+    let described = String::from_utf8(
         Command::new("git")
-            .args(["describe", "--tags", "--always"])
+            .args([
+                "describe",
+                "--tags",
+                "--always",
+                "--abbrev=0",
+                "--match",
+                "v[0-9]*",
+            ])
             .output()?
             .stdout,
     )
-    .map_err(|_| std::io::Error::other("Failed to parse git count"))?;
-    let version_name = version_name.trim_start_matches('v').to_string();
+    .map_err(|_| std::io::Error::other("Failed to parse git describe"))?;
+    let described = described.trim();
+    let is_plain_sha = !described.is_empty()
+        && described.len() >= 7
+        && described.len() <= 40
+        && described.bytes().all(|b| b.is_ascii_hexdigit());
+    let raw_ver = if described.is_empty() || is_plain_sha {
+        "v4.0.0"
+    } else {
+        described
+    };
+    let version_name = raw_ver.trim_start_matches('v').to_string();
     Ok((version_code, version_name))
 }
 
@@ -367,7 +384,7 @@ fn main() {
     let out_dir = env::var("OUT_DIR").expect("Failed to get $OUT_DIR");
     let out_dir = Path::new(&out_dir);
     if env::var("KSU_PACKAGE_NAME").is_err() {
-        println!("cargo:rustc-env=KSU_PACKAGE_NAME=com.resukisu.resukisu");
+        println!("cargo:rustc-env=KSU_PACKAGE_NAME=org.uranxsu.manager");
     }
     println!("cargo:rustc-env=VERSION_CODE={code}");
     println!("cargo:rustc-env=VERSION_NAME={name}");

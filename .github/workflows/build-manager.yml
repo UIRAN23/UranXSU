@@ -167,11 +167,11 @@ jobs:
         run: |
           export BUILD_EXTRA_ARGS=""
           if [ "${{ github.event_name }}" == "pull_request" ]; then
-            export KSU_PACKAGE_NAME="com.resukisu.resukisu.pr${{github.event.pull_request.number}}"
+            export KSU_PACKAGE_NAME="org.uranxsu.manager.pr${{github.event.pull_request.number}}"
             export BUILD_EXTRA_ARGS="-PKSU_PACKAGE_NAME=$KSU_PACKAGE_NAME"
           elif [ "${{ github.ref_type }}" != "tag" ] && [ "${{ github.ref_name }}" != "main" ]; then
-            export KSU_PACKAGE_NAME="com.resukisu.resukisu.dev"
-            export KSU_NAME="BakaSU-DEV"
+            export KSU_PACKAGE_NAME="org.uranxsu.manager.dev"
+            export KSU_NAME="UranXSU-DEV"
             export BUILD_EXTRA_ARGS="-PKSU_PACKAGE_NAME=$KSU_PACKAGE_NAME -PKSU_NAME=$KSU_NAME"
           fi
 
@@ -316,97 +316,3 @@ jobs:
         with:
           name: Manager-${{ matrix.build_type }}
           path: dist/*.apk
-
-  telegram-bot-api:
-    name: Telegram Bot API
-    if: github.event_name != 'pull_request' && github.event_name != 'workflow_call'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Clone Telegram Bot API
-        run: |
-          git clone --recursive https://github.com/tdlib/telegram-bot-api.git
-          git status telegram-bot-api >> telegram-bot-api-status
-      - name: Cache Bot API Binary
-        id: cache-bot-api
-        uses: actions/cache@v6.1.0
-        with:
-          path: telegram-bot-api-binary
-          key: CI-telegram-bot-api-${{ hashFiles('telegram-bot-api-status') }}
-      - name: Compile Telegram Bot API
-        if: steps.cache-bot-api.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update
-          sudo apt-get install make git zlib1g-dev libssl-dev gperf cmake g++
-          cd telegram-bot-api
-          rm -rf build
-          mkdir build
-          cd build
-          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=.. ..
-          cmake --build . --target install -j$(nproc)
-          cd ../..
-          ls -l telegram-bot-api/bin/telegram-bot-api*
-          cp telegram-bot-api/bin/telegram-bot-api telegram-bot-api-binary
-      - name: Upload Binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: telegram-bot-api-binary
-          path: telegram-bot-api-binary
-
-  upload-telegram:
-    needs: [repack-manager, telegram-bot-api]
-    if: github.event_name != 'pull_request' && github.event_name != 'workflow_call'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - name: Setup need_upload
-        id: need_upload
-        run: |
-          if [ ! -z "${{ secrets.BOT_TOKEN }}" ]; then
-            echo "UPLOAD=true" >> $GITHUB_OUTPUT
-          else
-            echo "UPLOAD=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Determine topicid
-        id: determine
-        run: |
-          echo "topicid=${{ vars.MESSAGE_THREAD_ID }}" >> $GITHUB_OUTPUT
-
-          if [[ "${{ github.ref }}" != "refs/heads/main" && "${{ github.ref_type }}" != "tag" ]]; then
-            echo "topicid=${{ vars.MESSAGE_DEVELOPING_MANAGER_THREAD_ID }}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Download Release artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: Manager-release
-          path: ./apk/release
-
-      - name: Download Telegram Bot API Binary
-        uses: actions/download-artifact@v8
-        with:
-          name: telegram-bot-api-binary
-          path: .
-
-      - name: Upload to Telegram
-        if: steps.need_upload.outputs.UPLOAD == 'true'
-        env:
-          CHAT_ID: ${{ vars.CHAT_ID }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          MESSAGE_THREAD_ID: ${{ steps.determine.outputs.topicid }}
-          DEVELOPING_THREAD_ID: ${{ vars.MESSAGE_DEVELOPING_MANAGER_THREAD_ID }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TITLE: Manager
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          pip3 install python-telegram-bot
-          export VERSION=$(git rev-list --count HEAD)
-          APK_RELEASE=apk/release/*.apk
-          chmod +x telegram-bot-api-binary
-          python3 $GITHUB_WORKSPACE/scripts/ksubot.py $APK_RELEASE

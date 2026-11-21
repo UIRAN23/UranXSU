@@ -46,9 +46,9 @@ extra["androidTargetCompatibility"] = JavaVersion.VERSION_21
 extra["managerVersionCode"] = 30000 + getGitCommitCount() + 700
 extra["managerVersionName"] = getGitDescribe()
 extra["isPrBuild"] = project.findProperty("IS_PR_BUILD")?.toString()?.toBoolean() ?: false
-extra["defaultManagerPackageName"] = "com.resukisu.resukisu"
+extra["defaultManagerPackageName"] = "org.uranxsu.manager"
 extra["managerPackageName"] = project.findProperty("KSU_PACKAGE_NAME")?.toString() ?: extra["defaultManagerPackageName"]
-extra["defaultManagerAppName"] = if (extra["isPrBuild"] == true) "BakaSU PR" else "BakaSU"
+extra["defaultManagerAppName"] = if (extra["isPrBuild"] == true) "UranXSU PR" else "UranXSU"
 extra["managerName"] = project.findProperty("KSU_NAME")?.toString() ?: extra["defaultManagerAppName"]
 
 val isSpoofedBuild = project.findProperty("IS_SPOOFED_BUILD")?.toString()?.toBoolean() ?: false
@@ -58,11 +58,17 @@ fun getGitCommitCount(): Int = providers.exec {
 }.standardOutput.asText.get().trim().toInt()
 
 fun getGitDescribe(): String {
-    val desc = providers.exec {
-        commandLine("git", "describe", "--tags", "--always", "--abbrev=0")
+    val described = providers.exec {
+        commandLine("git", "describe", "--tags", "--always", "--abbrev=0", "--match", "v[0-9]*")
     }.standardOutput.asText.get().trim()
-    if (isSpoofedBuild) {
-        return "$desc-spoofed"
+    val base = if (described.isNotEmpty() && !described.matches(Regex("^[0-9a-f]{7,40}$"))) {
+        described
+    } else {
+        "v4.0.0"
     }
-    return desc
+    return if (isSpoofedBuild) {
+        "$base-spoofed"
+    } else {
+        base
+    }
 }

@@ -1,0 +1,73 @@
+name: Build Auxiliary Tools
+
+on:
+  workflow_call:
+
+jobs:
+  build-aux-tools:
+    name: Build auxiliary native tools
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+
+      - name: Build susfs_insmod (aarch64)
+        run: |
+          set -eu
+          if ! command -v ld.lld >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y lld
+          fi
+          mkdir -p out/aarch64 out/arm out/x86_64
+          clang --target=aarch64-linux-gnu -O2 -nostdlib -static-pie \
+            -fno-stack-protector -fno-builtin -fuse-ld=lld -Wl,-e,_start \
+            -o out/aarch64/susfs_insmod susfs-lkm/tools/susfs_insmod.c
+          chmod 0755 out/aarch64/susfs_insmod
+          ls -la out/aarch64/susfs_insmod
+
+      - name: Build NoMount nm CLI (aarch64, arm, x86_64)
+        run: |
+          set -eu
+          cd external/nomount/userspace/src
+          zig cc -target aarch64-linux -Oz -Xclang -Oz -mcmodel=tiny -static -ffreestanding -flto -fno-ident \
+            -fno-unwind-tables -fno-asynchronous-unwind-tables -Wl,--gc-sections,-z,norelro \
+            -mllvm -enable-machine-outliner=always nm.c -o ../../../../out/aarch64/nm
+
+          zig cc -target arm-linux -Oz -Xclang -Oz -static -ffreestanding -flto -ffunction-sections \
+            -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident \
+            -Wl,--gc-sections,-z,norelro nm.c -o ../../../../out/arm/nm
+
+          zig cc -target x86_64-linux -Oz -Xclang -Oz -static -ffreestanding -flto -ffunction-sections \
+            -fdata-sections -fno-unwind-tables -fno-asynchronous-unwind-tables -fno-ident \
+            -Wl,--gc-sections,-z,norelro nm.c -o ../../../../out/x86_64/nm
+
+          cd ../../../../out
+          chmod 0755 aarch64/nm arm/nm x86_64/nm
+          if command -v llvm-strip >/dev/null 2>&1; then
+            llvm-strip -s aarch64/nm arm/nm x86_64/nm
+          fi
+          ls -la aarch64/nm arm/nm x86_64/nm
+          file aarch64/nm arm/nm x86_64/nm
+
+      - name: Upload aarch64 auxiliary tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: aux-tools-aarch64
+          path: out/aarch64/*
+
+      - name: Upload arm auxiliary tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: aux-tools-arm
+          path: out/arm/*
+
+      - name: Upload x86_64 auxiliary tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: aux-tools-x86_64
+          path: out/x86_64/*

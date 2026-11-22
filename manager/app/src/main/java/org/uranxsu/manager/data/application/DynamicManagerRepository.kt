@@ -1,0 +1,124 @@
+package org.uranxsu.manager.data.application
+
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.uranxsu.manager.data.kernel.KernelRepository
+import org.uranxsu.manager.data.packageinfo.InstalledPackageRepository
+import org.uranxsu.manager.data.shell.KsuCliRepository
+import org.uranxsu.manager.domain.model.DynamicManagerApp
+import org.uranxsu.manager.domain.model.DynamicManagerConfig
+import org.uranxsu.manager.domain.model.DynamicManagerState
+
+class DynamicManagerRepository(
+    private val kernelRepository: KernelRepository,
+    private val installedPackageRepository: InstalledPackageRepository,
+    private val ksuCliRepository: KsuCliRepository,
+) {
+    private val mutex = Mutex()
+    private val mutableState = MutableStateFlow(DynamicManagerState())
+    val state: StateFlow<DynamicManagerState> = mutableState.asStateFlow()
+
+    suspend fun refresh(): Result<Unit> = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            mutableState.update { it.copy(isRefreshing = !it.isLoading) }
+            runCatching {
+                installedPackageRepository.refresh().getOrThrow()
+                val signatureIndexes = managerSignatureIndexes()
+                val apps = installedPackageRepository.packages.value
+                    .mapNotNull { packageInfo ->
+                        if (packageInfo.apkPath.isBlank()) {
+                            return@mapNotNull null
+                        }
+                        val nativeLibraryDir = packageInfo.nativeLibraryDir
+                        val hasKsud = !nativeLibraryDir.isNullOrBlank() &&
+                            File(nativeLibraryDir, "libksud.so").isFile
+                        val uid = packageInfo.uid
+                        val signatureIndex = signatureIndexes[uid % PER_USER_RANGE]
+                        DynamicManagerApp(
+                            label = packageInfo.appLabel.ifBlank { packageInfo.packageName },
+                            packageName = packageInfo.packageName,
+                            uid = uid,
+                            apkPath = packageInfo.apkPath,
+                            isSelected = signatureIndex == DYNAMIC_MANAGER_SIGNATURE_INDEX,
+                            managerSignatureIndex = signatureIndex,
+                            isChangeable = signatureIndex == null ||
+                                signatureIndex == DYNAMIC_MANAGER_SIGNATURE_INDEX,
+                            isSystem = packageInfo.isSystem,
+                            hasKsud = hasKsud,
+                        )
+                    }
+                    .sortedWith(appComparator)
+                mutableState.value = DynamicManagerState(
+                    config = ksuCliRepository.getDynamicManagerConfig()?.let {
+                        DynamicManagerConfig(size = it.size, hash = it.hash)
+                    },
+                    apps = apps,
+                    isLoading = false,
+                    isRefreshing = false,
+                )
+            }.onFailure {
+                mutableState.update { current ->
+                    current.copy(isLoading = false, isRefreshing = false)
+                }
+            }
+        }
+    }
+
+    suspend fun selectManager(apkPath: String): Result<Unit> = submit {
+        ksuCliRepository.setDynamicManagerApk(apkPath)
+    }
+
+    suspend fun setManual(size: Int, hash: String): Result<Unit> = submit {
+        ksuCliRepository.setDynamicManager(size, hash)
+    }
+
+    suspend fun clear(): Result<Unit> = submit(ksuCliRepository::clearDynamicManager)
+
+    private suspend fun submit(command: () -> Boolean): Result<Unit> = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            mutableState.update { it.copy(isSubmitting = true) }
+            runCatching {
+                check(command())
+                val signatureIndexes = managerSignatureIndexes()
+                mutableState.update { current ->
+                    current.copy(
+                        config = ksuCliRepository.getDynamicManagerConfig()?.let {
+                            DynamicManagerConfig(size = it.size, hash = it.hash)
+                        },
+                        apps = current.apps.map { app ->
+                            val signatureIndex = signatureIndexes[app.uid % PER_USER_RANGE]
+                            app.copy(
+                                isSelected = signatureIndex == DYNAMIC_MANAGER_SIGNATURE_INDEX,
+                                managerSignatureIndex = signatureIndex,
+                                isChangeable = signatureIndex == null ||
+                                    signatureIndex == DYNAMIC_MANAGER_SIGNATURE_INDEX,
+                            )
+                        }.sortedWith(appComparator),
+                        isSubmitting = false,
+                    )
+                }
+            }.onFailure {
+                mutableState.update { current -> current.copy(isSubmitting = false) }
+            }
+        }
+    }
+
+    private suspend fun managerSignatureIndexes(): Map<Int, Int> = kernelRepository.getManagerRuntimeInfo().managers.associate { it.uid to it.signatureIndex }
+
+    private companion object {
+        const val DYNAMIC_MANAGER_SIGNATURE_INDEX = 255
+        const val PER_USER_RANGE = 100_000
+        val appComparator =
+            compareByDescending<DynamicManagerApp> { it.isSelected }
+                .thenByDescending { it.managerSignatureIndex != null }
+                .thenByDescending { it.hasKsud }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.label }
+    }
+}

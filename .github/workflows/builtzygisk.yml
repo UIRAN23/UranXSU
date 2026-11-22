@@ -1,0 +1,149 @@
+name: Build BuiltZygisk
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build BuiltZygisk (NyaZygisk)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Setup Android SDK / NDK / CMake
+        run: |
+          set -eux
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          export PATH="$SDK_ROOT/cmdline-tools/latest/bin:$SDK_ROOT/platform-tools:$PATH"
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "ndk;27.2.12479018"
+          sdkmanager --install "platforms;android-37.0" || sdkmanager --install "platforms;android-37" || true
+          if [ ! -d "$SDK_ROOT/build-tools/37.0.0" ]; then
+            if ! sdkmanager --install "build-tools;37.0.0"; then
+              ALT_BT="$(sdkmanager --list | grep -oE 'build-tools;[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1)"
+              test -n "$ALT_BT"
+              sdkmanager --install "$ALT_BT"
+              BT_VER="${ALT_BT#build-tools;}"
+              sed -i "s/\"37.0.0\"/\"$BT_VER\"/" external/BuiltZygisk/build.gradle.kts
+            fi
+          fi
+          if [ ! -d "$SDK_ROOT/cmake/4.1.2" ]; then
+            if ! sdkmanager --install "cmake;4.1.2"; then
+              ALT_CMAKE="$(sdkmanager --list | grep -oE 'cmake;[0-9]+\.[0-9]+\.[0-9]+' | sort -V | tail -n 1)"
+              test -n "$ALT_CMAKE"
+              sdkmanager --install "$ALT_CMAKE"
+              CMAKE_VER="${ALT_CMAKE#cmake;}"
+              sed -i "s/version = \"4.1.2\"/version = \"$CMAKE_VER\"/" external/BuiltZygisk/loader/build.gradle.kts
+            fi
+          fi
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Setup Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+          components: rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: builtzygisk
+          workspaces: external/BuiltZygisk/zygiskd
+          cache-targets: true
+          add-job-id-key: false
+          add-rust-environment-hash-key: false
+          save-if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Setup cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build BuiltZygisk release archive
+        working-directory: external/BuiltZygisk
+        run: |
+          set -eux
+          chmod +x gradlew
+          ./gradlew zipRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx3072m
+
+      - name: Organize BuiltZygisk payloads
+        working-directory: external/BuiltZygisk
+        run: |
+          set -eux
+          zip="$(find module/build/outputs/release -type f -name 'NyaZygisk-v*-release.zip' | head -n 1)"
+          test -n "$zip"
+          rm -rf extracted
+          mkdir -p extracted
+          unzip -q "$zip" -d extracted
+
+          out="${GITHUB_WORKSPACE}/builtzygisk"
+          for arch in aarch64 arm x86_64 riscv64; do
+            mkdir -p "$out/$arch"
+            cp module/src/sepolicy.rule "$out/$arch/zygisk-sepolicy.rule"
+            cp extracted/module.prop "$out/$arch/zygisk-module.prop"
+          done
+
+          copy_if_present() {
+            [ -f "extracted/$1" ] || return 0
+            cp "extracted/$1" "$out/$2/$3"
+          }
+          copy_if_present bin/arm64-v8a/zygiskd             aarch64 zygiskd
+          copy_if_present lib/arm64-v8a/libzygisk_ptrace.so aarch64 zygisk-ptrace
+          copy_if_present lib/arm64-v8a/libzygisk.so        aarch64 libzygisk.so
+          copy_if_present lib/armeabi-v7a/libzygisk.so      aarch64 libzygisk32.so
+
+          copy_if_present bin/armeabi-v7a/zygiskd             arm zygiskd
+          copy_if_present lib/armeabi-v7a/libzygisk_ptrace.so arm zygisk-ptrace
+          copy_if_present lib/armeabi-v7a/libzygisk.so        arm libzygisk.so
+
+          copy_if_present bin/x86_64/zygiskd             x86_64 zygiskd
+          copy_if_present lib/x86_64/libzygisk_ptrace.so x86_64 zygisk-ptrace
+          copy_if_present lib/x86_64/libzygisk.so        x86_64 libzygisk.so
+          copy_if_present lib/x86/libzygisk.so           x86_64 libzygisk32.so
+
+          copy_if_present bin/riscv64/zygiskd             riscv64 zygiskd
+          copy_if_present lib/riscv64/libzygisk_ptrace.so riscv64 zygisk-ptrace
+          copy_if_present lib/riscv64/libzygisk.so        riscv64 libzygisk.so
+
+          for arch in aarch64 arm x86_64 riscv64; do
+            test -f "$out/$arch/zygiskd"
+            chmod 0755 "$out/$arch/zygiskd" "$out/$arch/zygisk-ptrace"
+            ls -la "$out/$arch"
+          done
+
+      - name: Upload builtzygisk-aarch64
+        uses: actions/upload-artifact@v7
+        with:
+          name: builtzygisk-aarch64
+          path: builtzygisk/aarch64/*
+
+      - name: Upload builtzygisk-arm
+        uses: actions/upload-artifact@v7
+        with:
+          name: builtzygisk-arm
+          path: builtzygisk/arm/*
+
+      - name: Upload builtzygisk-x86_64
+        uses: actions/upload-artifact@v7
+        with:
+          name: builtzygisk-x86_64
+          path: builtzygisk/x86_64/*
+
+      - name: Upload builtzygisk-riscv64
+        uses: actions/upload-artifact@v7
+        with:
+          name: builtzygisk-riscv64
+          path: builtzygisk/riscv64/*

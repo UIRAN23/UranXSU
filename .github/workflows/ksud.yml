@@ -1,0 +1,149 @@
+name: Build ksud
+on:
+  workflow_call:
+    inputs:
+      target:
+        required: true
+        type: string
+      os:
+        required: false
+        type: string
+        default: ubuntu-latest
+      pack_lkm:
+        required: false
+        type: boolean
+        default: true
+      pack_ksuinit:
+        required: false
+        type: boolean
+        default: true
+      use_cache:
+        required: false
+        type: boolean
+        default: true
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  build:
+    name: Build ksud (${{ inputs.target }})
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+
+      - name: Prepare LKM files
+        if: ${{ inputs.pack_lkm }}
+        run: |
+          cp aarch64-android*-lkm/*_kernelsu.ko ./userspace/ksud/bin/aarch64/
+          cp x86_64-android*-lkm/*_kernelsu.ko ./userspace/ksud/bin/x86_64/
+          if ls aarch64-android*-susfs-lkm/*_susfs.ko >/dev/null 2>&1; then
+            cp aarch64-android*-susfs-lkm/*_susfs.ko ./userspace/ksud/bin/aarch64/
+          fi
+          if ls aarch64-android*-nomount-lkm/*_nomount.ko >/dev/null 2>&1; then
+            cp aarch64-android*-nomount-lkm/*_nomount.ko ./userspace/ksud/bin/aarch64/
+          fi
+          if ls x86_64-android*-nomount-lkm/*_nomount.ko >/dev/null 2>&1; then
+            cp x86_64-android*-nomount-lkm/*_nomount.ko ./userspace/ksud/bin/x86_64/
+          fi
+
+      - name: Prepare auxiliary binaries
+        if: ${{ inputs.pack_lkm }}
+        run: |
+          if [ -f aux-tools-aarch64/susfs_insmod ]; then
+            cp aux-tools-aarch64/susfs_insmod ./userspace/ksud/bin/aarch64/susfs_insmod
+            chmod 0755 ./userspace/ksud/bin/aarch64/susfs_insmod
+          fi
+          if [ -f aux-tools-aarch64/nm ]; then
+            cp aux-tools-aarch64/nm ./userspace/ksud/bin/aarch64/nm
+            chmod 0755 ./userspace/ksud/bin/aarch64/nm
+          fi
+          if [ -f aux-tools-arm/nm ]; then
+            cp aux-tools-arm/nm ./userspace/ksud/bin/arm/nm
+            chmod 0755 ./userspace/ksud/bin/arm/nm
+          fi
+          if [ -f aux-tools-x86_64/nm ]; then
+            cp aux-tools-x86_64/nm ./userspace/ksud/bin/x86_64/nm
+            chmod 0755 ./userspace/ksud/bin/x86_64/nm
+          fi
+
+      - name: Prepare ksuinit
+        if: ${{ inputs.pack_ksuinit }}
+        run: |
+          mv ksuinit-aarch64/ksuinit ./userspace/ksud/bin/aarch64/
+          mv ksuinit-x86_64/ksuinit ./userspace/ksud/bin/x86_64/
+          mv ksuinit-riscv64/ksuinit ./userspace/ksud/bin/riscv64/
+          mv ksuinit-armv7/ksuinit ./userspace/ksud/bin/arm/
+
+      - name: Prepare BuiltZygisk
+        if: ${{ inputs.pack_lkm }}
+        run: |
+          for arch in aarch64 arm x86_64 riscv64; do
+            src="builtzygisk-$arch"
+            [ -d "$src" ] || continue
+            [ -d "$src/$arch" ] && src="$src/$arch"
+            cp -rf "$src"/. "./userspace/ksud/bin/$arch/"
+            echo "packed builtzygisk $arch: $(ls "$PWD/userspace/ksud/bin/$arch" | tr '\n' ' ')"
+          done
+
+      - name: Setup Rust toolchain
+        if: ${{ inputs.target != 'riscv64-linux-android' }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          targets: ${{ inputs.target }}
+          components: rust-src
+      
+      - name: Setup Rust toolchain
+        if: ${{ inputs.target == 'riscv64-linux-android' }}
+        run: |
+          rustup toolchain install nightly --profile minimal --component rust-src
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ksud-${{ inputs.target }}
+          workspaces: userspace/ksud
+          cache-directories: userspace/ksuinit/target
+          cache-targets: true
+          add-job-id-key: false
+          add-rust-environment-hash-key: false
+          save-if: ${{ github.event_name != 'pull_request' }}
+
+      - name: Setup cargo-ndk
+        if: ${{ inputs.target != 'riscv64-linux-android' }}
+        run: cargo install cargo-ndk --locked
+
+      - name: Assemble LKM bootstrap
+        run: |
+          clang --target=aarch64-linux-gnu -c -nostdlib \
+            -o userspace/ksud/.lkm_image_bootstrap.o \
+            userspace/ksud/src/lkm_image_bootstrap.S
+
+      - name: Build ksud
+        run: |
+          if [ "${{github.event_name}}" == "pull_request" ]; then
+            export KSU_PACKAGE_NAME="org.uranxsu.manager.pr${{github.event.pull_request.number}}"
+          elif [ "${{github.ref_type}}" != "tag" ] && [ "${{github.ref_name}}" != "main" ]; then
+            export KSU_PACKAGE_NAME="org.uranxsu.manager.dev"
+          fi
+
+          if [ "${{ inputs.target }}" == "riscv64-linux-android" ]; then
+            source .github/scripts/setup-rust-build.sh riscv64-linux-android 35
+            cd userspace/ksud/ 
+            cargo +nightly build -Z build-std=std,panic_abort --target "$TRIPLE" --release --manifest-path ./Cargo.toml --config ../../.github/riscv64-cargo.toml
+          else
+            cd userspace/ksud/
+            cargo ndk b -P 26 -t ${{ inputs.target }} -r -Z build-std-features="optimize_for_size" -Z trim-paths
+          fi
+
+          # Strip ksud executable to optimize binary size
+          find target -type f -name "ksud" -exec llvm-strip --strip-all {} + 2>/dev/null || true
+
+      - name: Upload ksud artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ksud-${{ inputs.target }}
+          path: userspace/ksud/target/**/release/ksud*

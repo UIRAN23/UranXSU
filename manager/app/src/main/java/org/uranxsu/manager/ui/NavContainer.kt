@@ -345,6 +345,7 @@ fun NavContainer(
         }
         val interceptPredictiveBack =
             settings.predictiveBackAnimation == PredictiveBackAnimation.None && backStack.size > 1
+        val currentRoute = backStack.lastOrNull()
 
         NavDisplay(
             backStack = backStack,
@@ -352,57 +353,62 @@ fun NavContainer(
             transition = transition,
             effects = effects,
         ) {
-            entry<Route.About>(swipeDismiss = swipeBackDirection) {
+            entry<Route.About>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     AboutScreen()
                 }
             }
-            entry<Route.OpenSourceLicense>(swipeDismiss = swipeBackDirection) {
+            entry<Route.OpenSourceLicense>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     OpenSourceLicenseScreen()
                 }
             }
-            entry<Route.Sulog>(swipeDismiss = swipeBackDirection) {
+            entry<Route.Sulog>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     SulogScreen()
                 }
             }
-            entry<Route.Main>(swipeDismiss = NavSwipeDirection.None) {
+            entry<Route.Main>(swipeDismiss = NavSwipeDirection.None) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
             }
-            entry<Route.AppProfileTemplate>(swipeDismiss = swipeBackDirection) {
+            entry<Route.AppProfileTemplate>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     AppProfileTemplateScreen()
                 }
@@ -414,6 +420,7 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     TemplateEditorScreen(
                         templateId = key.templateId,
@@ -429,17 +436,19 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     AppProfileScreen(key.uid, key.packageName)
                 }
             }
-            entry<Route.ModuleRepo>(swipeDismiss = swipeBackDirection) {
+            entry<Route.ModuleRepo>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     ModuleRepoScreen()
                 }
@@ -451,6 +460,7 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     OnlineModuleDetailScreen(key.moduleId, key.repositoryUrl)
                 }
@@ -462,15 +472,17 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) { ModuleRepoScreen(key.repositoryUrl) }
             }
-            entry<Route.AddRepository>(swipeDismiss = swipeBackDirection) {
+            entry<Route.AddRepository>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) { AddRepositoryScreen() }
             }
             entry<Route.Install>(swipeDismiss = NavSwipeDirection.None) { key ->
@@ -480,6 +492,7 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     InstallScreen(key.preselectedKernelUri)
                 }
@@ -491,6 +504,7 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     FlashScreen(key.toFlashIt())
                 }
@@ -502,6 +516,7 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     ScriptRunScreen(key)
                 }
@@ -513,138 +528,151 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     ExecuteModuleActionScreen(key.moduleId, key.fromShortcut)
                 }
             }
-            entry<Route.Home>(swipeDismiss = NavSwipeDirection.None) {
+            entry<Route.Home>(swipeDismiss = NavSwipeDirection.None) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
             }
-            entry<Route.SuperUser>(swipeDismiss = NavSwipeDirection.None) {
+            entry<Route.SuperUser>(swipeDismiss = NavSwipeDirection.None) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
             }
-            entry<Route.Module>(swipeDismiss = NavSwipeDirection.None) {
+            entry<Route.Module>(swipeDismiss = NavSwipeDirection.None) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
             }
-            entry<Route.Settings>(swipeDismiss = NavSwipeDirection.None) {
+            entry<Route.Settings>(swipeDismiss = NavSwipeDirection.None) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
             }
-            entry<Route.ThemeSettings>(swipeDismiss = swipeBackDirection) {
+            entry<Route.ThemeSettings>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     ThemeSettingsScreen(settingsViewModel = settingsViewModel)
                 }
             }
-            entry<Route.CustomTexts>(swipeDismiss = swipeBackDirection) {
+            entry<Route.CustomTexts>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     CustomTextScreen()
                 }
             }
-            entry<Route.SuSFSConfig>(swipeDismiss = swipeBackDirection) {
+            entry<Route.SuSFSConfig>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     SuSFSConfigScreen()
                 }
             }
-            entry<Route.MountSettings>(swipeDismiss = swipeBackDirection) {
+            entry<Route.MountSettings>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     MountSettingsScreen()
                 }
             }
-            entry<Route.NoMountManager>(swipeDismiss = swipeBackDirection) {
+            entry<Route.NoMountManager>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     NoMountManagerScreen()
                 }
             }
-            entry<Route.BuiltinZygisk>(swipeDismiss = swipeBackDirection) {
+            entry<Route.BuiltinZygisk>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     BuiltinZygiskScreen()
                 }
             }
-            entry<Route.UmountManager>(swipeDismiss = swipeBackDirection) {
+            entry<Route.UmountManager>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     UmountManagerScreen()
                 }
             }
-            entry<Route.DynamicManager>(swipeDismiss = swipeBackDirection) {
+            entry<Route.DynamicManager>(swipeDismiss = swipeBackDirection) { key ->
                 ManagerNavEntry(
                     interceptPredictiveBack = interceptPredictiveBack,
                     onBack = onBack,
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     DynamicManagerScreen()
                 }
@@ -656,6 +684,7 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
+                    isTopEntry = currentRoute == key,
                 ) {
                     KernelFlashScreen(key.kernelUri, key.selectedSlot, key.skipKsud)
                 }
@@ -671,6 +700,7 @@ private fun ManagerNavEntry(
     themeConfig: ThemeConfig,
     backgroundRenderState: BackgroundRenderState,
     useBlur: Boolean,
+    isTopEntry: Boolean,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
@@ -686,8 +716,8 @@ private fun ManagerNavEntry(
         mutableStateOf<LayoutCoordinates?>(null)
     }
 
-    LaunchedEffect(backgroundRenderState.imagePainter) {
-        if (backgroundRenderState.imagePainter == null) {
+    LaunchedEffect(backgroundRenderState.imagePainter, backgroundRenderState.imageBitmap) {
+        if (backgroundRenderState.imagePainter == null && backgroundRenderState.imageBitmap == null) {
             backgroundBlurAnchorCoordinates = null
         }
     }
@@ -731,14 +761,27 @@ private fun ManagerNavEntry(
             LocalBackgroundBlurAnchor provides backgroundBlurAnchorCoordinates,
         ) {
             if (isVideoBg && customBgUri != null) {
+                val frameBitmap = backgroundRenderState.imageBitmap
+                val framePainter = remember(frameBitmap) { frameBitmap?.let { BitmapPainter(it) } }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .background(surfaceContainer)
                         .onGloballyPositioned { coordinates ->
                             backgroundBlurAnchorCoordinates = coordinates.takeIf {
                                 it.isAttached
                             }
                         }
+                        .then(
+                            if (framePainter != null) {
+                                Modifier.paint(
+                                    painter = framePainter,
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else {
+                                Modifier
+                            },
+                        )
                         .drawWithContent {
                             drawContent()
                             drawRect(
@@ -748,11 +791,14 @@ private fun ManagerNavEntry(
                             )
                         },
                 ) {
-                    org.uranxsu.manager.ui.component.media.LoopingVideoBackground(
-                        videoUri = customBgUri,
-                        modifier = Modifier.fillMaxSize(),
-                        isMuted = true,
-                    )
+                    if (isTopEntry) {
+                        org.uranxsu.manager.ui.component.media.LoopingVideoBackground(
+                            videoUri = customBgUri,
+                            modifier = Modifier.fillMaxSize(),
+                            isMuted = true,
+                            isActive = true,
+                        )
+                    }
                 }
             } else {
                 backgroundRenderState.imagePainter?.let { painter ->
@@ -848,7 +894,9 @@ fun rememberMaterial3BlurBackdrop(
 
     return rememberLayerBackdrop {
         if (themeConfig.isEnableBlurExp) {
-            backgroundRenderState.imagePainter?.let { painter ->
+            val backgroundBitmap = backgroundRenderState.imageBitmap
+            val painter = backgroundRenderState.imagePainter
+            if (backgroundBitmap != null || painter != null) {
                 val backgroundViewportSize = backgroundAnchor
                     ?.takeIf { it.isAttached && it.size.width > 0 && it.size.height > 0 }
                     ?.size
@@ -887,7 +935,6 @@ fun rememberMaterial3BlurBackdrop(
                 val physicalPageOffset = pageOffset * pagerViewportWidth *
                     if (layoutDirection == LayoutDirection.Ltr) 1f else -1f
                 val backgroundOffset = pagerViewportLeft + physicalPageOffset
-                val backgroundBitmap = backgroundRenderState.imageBitmap
 
                 if (
                     backgroundBitmap != null &&
@@ -918,7 +965,7 @@ fun rememberMaterial3BlurBackdrop(
                             )
                         }
                     }
-                } else {
+                } else if (painter != null) {
                     translate(left = -backgroundOffset) {
                         with(painter) {
                             draw(size = Size(backgroundWidth, backgroundHeight))

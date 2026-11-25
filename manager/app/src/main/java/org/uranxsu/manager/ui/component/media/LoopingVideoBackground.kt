@@ -1,19 +1,22 @@
 package org.uranxsu.manager.ui.component.media
 
 import android.content.Context
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.media.MediaPlayer
 import android.net.Uri
-import android.os.Build
+import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Log
 import android.view.Surface
 import android.view.TextureView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -25,10 +28,22 @@ import java.io.File
 private const val TAG = "LoopingVideoBackground"
 
 private val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "avi", "3gp", "flv", "m4v")
+private val IMAGE_FTYP_BRANDS = setOf(
+    "heic",
+    "heix",
+    "hevc",
+    "hevx",
+    "heim",
+    "heis",
+    "mif1",
+    "msf1",
+    "avif",
+    "avis",
+)
 
 fun isVideoPath(path: String?): Boolean {
     if (path.isNullOrBlank()) return false
-    val ext = path.substringAfterLast('.', "").lowercase()
+    val ext = path.substringBefore('?').substringBefore('#').substringAfterLast('.', "").lowercase()
     return ext in VIDEO_EXTENSIONS
 }
 
@@ -37,14 +52,208 @@ fun isVideoFile(file: File?): Boolean {
     return isVideoPath(file.name)
 }
 
+private fun queryDisplayName(context: Context, uri: Uri): String? = runCatching {
+    context.contentResolver.query(
+        uri,
+        arrayOf(OpenableColumns.DISPLAY_NAME),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        if (!cursor.moveToFirst()) return@use null
+        val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        if (nameIdx >= 0) cursor.getString(nameIdx) else null
+    }
+}.getOrNull()
+
+private fun queryMediaStoreMime(context: Context, uri: Uri): String? = runCatching {
+    context.contentResolver.query(
+        uri,
+        arrayOf(MediaStore.MediaColumns.MIME_TYPE),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        if (!cursor.moveToFirst()) return@use null
+        val mimeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.MIME_TYPE)
+        if (mimeIdx >= 0) cursor.getString(mimeIdx) else null
+    }
+}.getOrNull()
+
+private fun sniffVideoFormat(context: Context, uri: Uri): String? = runCatching {
+    context.contentResolver.openInputStream(uri)?.use { stream ->
+        val header = ByteArray(16)
+        var readTotal = 0
+        while (readTotal < header.size) {
+            val read = stream.read(header, readTotal, header.size - readTotal)
+            if (read <= 0) break
+            readTotal += read
+        }
+        if (readTotal < 4) return@use null
+
+        // EBML (WebM / Matroska)
+        if (header[0] == 0x1A.toByte() &&
+            header[1] == 0x45.toByte() &&
+            header[2] == 0xDF.toByte() &&
+            header[3] == 0xA3.toByte()
+        ) {
+            return@use "webm"
+        }
+
+        // RIFF .... AVI
+        if (readTotal >= 12 &&
+            header[0] == 'R'.code.toByte() &&
+            header[1] == 'I'.code.toByte() &&
+            header[2] == 'F'.code.toByte() &&
+            header[3] == 'F'.code.toByte() &&
+            header[8] == 'A'.code.toByte() &&
+            header[9] == 'V'.code.toByte() &&
+            header[10] == 'I'.code.toByte()
+        ) {
+            return@use "avi"
+        }
+
+        // ISO Base Media File Format: "ftyp"
+        if (readTotal >= 12 &&
+            header[4] == 'f'.code.toByte() &&
+            header[5] == 't'.code.toByte() &&
+            header[6] == 'y'.code.toByte() &&
+            header[7] == 'p'.code.toByte()
+        ) {
+            val brand = String(header, 8, 4, Charsets.US_ASCII).lowercase()
+            if (brand in IMAGE_FTYP_BRANDS) {
+                return@use "image"
+            }
+            return@use if (brand == "qt  ") "mov" else "mp4"
+        }
+        null
+    }
+}.getOrNull()
+
 fun isVideoUri(context: Context, uri: Uri?): Boolean {
     if (uri == null) return false
+
     val mimeType = runCatching { context.contentResolver.getType(uri) }.getOrNull()
-    if (mimeType?.startsWith("video/", ignoreCase = true) == true) {
-        return true
+        ?: queryMediaStoreMime(context, uri)
+    if (mimeType != null) {
+        if (mimeType.startsWith("video/", ignoreCase = true)) return true
+        if (mimeType.startsWith("image/", ignoreCase = true)) return false
     }
+
+    val displayName = queryDisplayName(context, uri)
+    if (isVideoPath(displayName)) return true
+
     val path = uri.path ?: uri.toString()
-    return isVideoPath(path)
+    if (isVideoPath(path)) return true
+
+    return when (sniffVideoFormat(context, uri)) {
+        "webm", "avi", "mp4", "mov" -> true
+        "image" -> false
+        else -> false
+    }
+}
+
+fun resolveVideoExtension(context: Context, uri: Uri): String {
+    val mimeType = (
+        runCatching { context.contentResolver.getType(uri) }.getOrNull()
+            ?: queryMediaStoreMime(context, uri)
+        )?.lowercase()
+    when {
+        mimeType == null -> Unit
+        mimeType.contains("webm") -> return "webm"
+        mimeType.contains("matroska") || mimeType.contains("mkv") -> return "mkv"
+        mimeType.contains("quicktime") || mimeType.contains("mov") -> return "mov"
+        mimeType.contains("3gpp") || mimeType.contains("3gp") -> return "3gp"
+        mimeType.contains("x-msvideo") || mimeType.contains("avi") -> return "avi"
+        mimeType.contains("mp4") || mimeType.contains("m4v") -> return "mp4"
+    }
+
+    val extFromName = queryDisplayName(context, uri)
+        ?.substringAfterLast('.', "")
+        ?.lowercase()
+        ?.takeIf { it in VIDEO_EXTENSIONS }
+    if (extFromName != null) return extFromName
+
+    val extFromPath = (uri.path ?: uri.toString())
+        .substringBefore('?')
+        .substringBefore('#')
+        .substringAfterLast('.', "")
+        .lowercase()
+        .takeIf { it in VIDEO_EXTENSIONS }
+    if (extFromPath != null) return extFromPath
+
+    return when (sniffVideoFormat(context, uri)) {
+        "webm" -> "webm"
+        "avi" -> "avi"
+        "mov" -> "mov"
+        else -> "mp4"
+    }
+}
+
+private class VideoPlayerHolder {
+    var mediaPlayer: MediaPlayer? = null
+    var surface: Surface? = null
+    var textureView: TextureView? = null
+    var isPrepared: Boolean = false
+    var isReleased: Boolean = false
+    var videoWidth: Int = 0
+    var videoHeight: Int = 0
+    var viewWidth: Int = 0
+    var viewHeight: Int = 0
+
+    fun applyTransform() {
+        val tv = textureView ?: return
+        if (viewWidth <= 0 || viewHeight <= 0 || videoWidth <= 0 || videoHeight <= 0) return
+
+        val viewAspect = viewWidth.toFloat() / viewHeight.toFloat()
+        val videoAspect = videoWidth.toFloat() / videoHeight.toFloat()
+        var scaleX = 1f
+        var scaleY = 1f
+        if (videoAspect > viewAspect) {
+            scaleX = videoAspect / viewAspect
+        } else {
+            scaleY = viewAspect / videoAspect
+        }
+
+        val matrix = Matrix().apply {
+            setScale(scaleX, scaleY, viewWidth / 2f, viewHeight / 2f)
+        }
+        tv.setTransform(matrix)
+    }
+
+    fun startIfReady() {
+        if (!isPrepared || isReleased) return
+        runCatching {
+            val mp = mediaPlayer ?: return
+            if (!mp.isPlaying) {
+                mp.start()
+            }
+        }
+    }
+
+    fun pauseIfReady() {
+        if (!isPrepared || isReleased) return
+        runCatching {
+            val mp = mediaPlayer ?: return
+            if (mp.isPlaying) {
+                mp.pause()
+            }
+        }
+    }
+
+    fun release() {
+        isReleased = true
+        isPrepared = false
+        runCatching {
+            mediaPlayer?.setSurface(null)
+            mediaPlayer?.release()
+        }
+        mediaPlayer = null
+        runCatching {
+            surface?.release()
+        }
+        surface = null
+    }
 }
 
 @Composable
@@ -52,87 +261,128 @@ fun LoopingVideoBackground(
     videoUri: Uri,
     modifier: Modifier = Modifier,
     isMuted: Boolean = true,
+    isActive: Boolean = true,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    var mediaPlayerInstance by remember { mutableStateOf<MediaPlayer?>(null) }
+    val currentIsActive by rememberUpdatedState(isActive)
+    val currentIsMuted by rememberUpdatedState(isMuted)
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> {
-                    runCatching {
-                        if (mediaPlayerInstance?.isPlaying == true) {
-                            mediaPlayerInstance?.pause()
-                        }
-                    }
-                }
+    key(videoUri) {
+        val holder = remember(videoUri) { VideoPlayerHolder() }
 
-                Lifecycle.Event.ON_RESUME -> {
-                    runCatching {
-                        mediaPlayerInstance?.start()
-                    }
-                }
-
-                else -> {}
+        LaunchedEffect(isActive) {
+            if (isActive) {
+                holder.startIfReady()
+            } else {
+                holder.pauseIfReady()
             }
         }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
-    }
 
-    AndroidView(
-        factory = { ctx ->
-            TextureView(ctx).apply {
-                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                        try {
-                            mediaPlayerInstance?.release()
-                            val mp = MediaPlayer().apply {
-                                setSurface(Surface(surface))
-                                setDataSource(ctx, videoUri)
-                                isLooping = true
-                                if (isMuted) {
-                                    setVolume(0f, 0f)
+        DisposableEffect(lifecycleOwner, holder) {
+            val observer = LifecycleEventObserver { _, event ->
+                when (event) {
+                    Lifecycle.Event.ON_PAUSE -> holder.pauseIfReady()
+                    Lifecycle.Event.ON_RESUME -> if (currentIsActive) holder.startIfReady()
+                    else -> Unit
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+                holder.release()
+            }
+        }
+
+        AndroidView(
+            factory = { ctx ->
+                TextureView(ctx).apply {
+                    holder.textureView = this
+                    surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                        override fun onSurfaceTextureAvailable(
+                            surfaceTexture: SurfaceTexture,
+                            width: Int,
+                            height: Int,
+                        ) {
+                            holder.release()
+                            holder.isReleased = false
+                            holder.viewWidth = width
+                            holder.viewHeight = height
+                            val surface = Surface(surfaceTexture)
+                            holder.surface = surface
+                            try {
+                                val mp = MediaPlayer().apply {
+                                    setSurface(surface)
+                                    setDataSource(ctx, videoUri)
+                                    isLooping = true
+                                    if (currentIsMuted) {
+                                        setVolume(0f, 0f)
+                                    }
+                                    setOnVideoSizeChangedListener { _, vw, vh ->
+                                        holder.videoWidth = vw
+                                        holder.videoHeight = vh
+                                        holder.applyTransform()
+                                    }
+                                    setOnPreparedListener { player ->
+                                        if (holder.isReleased) return@setOnPreparedListener
+                                        holder.isPrepared = true
+                                        holder.videoWidth = player.videoWidth
+                                        holder.videoHeight = player.videoHeight
+                                        holder.applyTransform()
+                                        if (currentIsMuted) {
+                                            player.setVolume(0f, 0f)
+                                        }
+                                        if (currentIsActive &&
+                                            lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                                        ) {
+                                            player.start()
+                                        }
+                                    }
+                                    setOnCompletionListener { player ->
+                                        if (holder.isPrepared && !holder.isReleased && currentIsActive) {
+                                            runCatching {
+                                                player.seekTo(0)
+                                                player.start()
+                                            }
+                                        }
+                                    }
+                                    setOnErrorListener { _, what, extra ->
+                                        Log.w(TAG, "MediaPlayer error: what=$what, extra=$extra")
+                                        true
+                                    }
+                                    prepareAsync()
                                 }
-                                setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING)
-                                setOnPreparedListener { player ->
-                                    player.start()
-                                }
-                                setOnErrorListener { _, what, extra ->
-                                    Log.w(TAG, "MediaPlayer error: what=$what, extra=$extra")
-                                    true
-                                }
-                                prepareAsync()
+                                holder.mediaPlayer = mp
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Failed to initialize MediaPlayer for $videoUri", e)
+                                holder.release()
                             }
-                            mediaPlayerInstance = mp
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Failed to initialize MediaPlayer for $videoUri", e)
                         }
-                    }
 
-                    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
-
-                    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-                        runCatching {
-                            mediaPlayerInstance?.release()
-                            mediaPlayerInstance = null
+                        override fun onSurfaceTextureSizeChanged(
+                            surfaceTexture: SurfaceTexture,
+                            width: Int,
+                            height: Int,
+                        ) {
+                            holder.viewWidth = width
+                            holder.viewHeight = height
+                            holder.applyTransform()
                         }
-                        return true
-                    }
 
-                    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+                        override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+                            holder.release()
+                            return true
+                        }
+
+                        override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
+                    }
                 }
-            }
-        },
-        modifier = modifier,
-        onRelease = {
-            runCatching {
-                mediaPlayerInstance?.release()
-                mediaPlayerInstance = null
-            }
-        },
-    )
+            },
+            modifier = modifier,
+            onRelease = {
+                holder.textureView = null
+                holder.release()
+            },
+        )
+    }
 }

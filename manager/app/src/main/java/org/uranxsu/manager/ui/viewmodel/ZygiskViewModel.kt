@@ -2,6 +2,10 @@ package org.uranxsu.manager.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,6 +17,8 @@ import org.uranxsu.manager.domain.model.ZygiskInjectedModule
 import org.uranxsu.manager.domain.model.ZygiskStatus
 import org.uranxsu.manager.domain.usecase.RebootUseCase
 import org.uranxsu.manager.domain.usecase.ZygiskUseCase
+
+private val zygiskSwitchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 data class BuiltinZygiskUiState(
     val status: ZygiskStatus = ZygiskStatus(),
@@ -28,6 +34,7 @@ class BuiltinZygiskViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(BuiltinZygiskUiState())
     val state: StateFlow<BuiltinZygiskUiState> = mutableState.asStateFlow()
+    private var pendingSwitch: Deferred<Boolean>? = null
 
     init {
         refresh()
@@ -57,10 +64,28 @@ class BuiltinZygiskViewModel(
     }
 
     suspend fun switchProvider(target: String): Boolean {
-        val ok = runCatching { zygiskUseCase.switchProvider(target) }.getOrDefault(false)
-        refresh()
-        return ok
+        val active = pendingSwitch
+        if (active != null && active.isActive) {
+            return active.await()
+        }
+        val deferred = zygiskSwitchScope.async {
+            runCatching { zygiskUseCase.switchProvider(target) }.getOrDefault(false)
+        }
+        pendingSwitch = deferred
+        return try {
+            val ok = deferred.await()
+            refresh()
+            ok
+        } finally {
+            if (pendingSwitch === deferred) {
+                pendingSwitch = null
+            }
+        }
     }
+
+    suspend fun awaitPendingSwitch(): Boolean = pendingSwitch?.let { deferred ->
+        runCatching { deferred.await() }.getOrDefault(false)
+    } ?: true
 
     suspend fun rearm(): Boolean {
         val ok = runCatching { zygiskUseCase.rearm() }.getOrDefault(false)
@@ -76,7 +101,9 @@ class BuiltinZygiskViewModel(
 
     fun softReboot() {
         viewModelScope.launch {
-            runCatching { rebootUseCase("soft_reboot") }
+            if (awaitPendingSwitch()) {
+                runCatching { rebootUseCase("soft_reboot") }
+            }
         }
     }
 }

@@ -98,24 +98,10 @@ if [ "$KSU" ]; then
   ui_print "- Checking SELinux patches"
   if ! check_sepolicy "$TMPDIR/sepolicy.rule"; then
     ui_print "*********************************************************"
-    ui_print "! Unable to apply SELinux patches!"
-    ui_print "! Your kernel may not support SELinux patch fully"
+    ui_print "! ksud rejected our SELinux rules!"
+    ui_print "! Please report this along with your ksud version"
     abort    "*********************************************************"
   fi
-fi
-
-# Stop any running old monitor/tracer to prevent it from overwriting new module.prop during update
-if [ "$BOOTMODE" ]; then
-  for tracer_bin in \
-    /data/adb/modules/zygisksu/bin/zygisk-ptrace64 \
-    /data/adb/modules/zygisksu/bin/zygisk-ptrace32 \
-    "$MODPATH/bin/zygisk-ptrace64" \
-    "$MODPATH/bin/zygisk-ptrace32"; do
-    if [ -f "$tracer_bin" ]; then
-      "$tracer_bin" ctl exit >/dev/null 2>&1
-    fi
-  done
-  killall -9 zygisk-ptrace64 zygisk-ptrace32 >/dev/null 2>&1
 fi
 
 ui_print "- Extracting module files"
@@ -132,31 +118,17 @@ ui_print "- Extracting WebUI files"
 unzip -o "$ZIPFILE" "webroot/*" -x "*.sha256" -d "$MODPATH" >&2
 mv "$TMPDIR/sepolicy.rule" "$MODPATH"
 
-# Migrate WebUI config to /data/system/nyazygisk
-mkdir -p "/data/system/nyazygisk"
-chmod 755 "/data/system/nyazygisk"
-chcon u:object_r:system_file:s0 "/data/system/nyazygisk"
-chown system:system "/data/system/nyazygisk"
+WORK_DIR="@WORK_DIRECTORY@"
 
-if [ ! -f "/data/system/nyazygisk/config.prop" ]; then
-  if [ -f "/data/adb/nyazygisk/config.prop" ]; then
-    ui_print "- Migrating WebUI config from /data/adb/nyazygisk"
-    cp -af "/data/adb/nyazygisk/config.prop" "/data/system/nyazygisk/config.prop"
-  elif [ -f "/data/adb/modules/zygisksu/config.prop" ]; then
-    ui_print "- Migrating WebUI config from /data/adb/modules/zygisksu"
-    cp -af "/data/adb/modules/zygisksu/config.prop" "/data/system/nyazygisk/config.prop"
-  fi
-fi
+mkdir -p "$WORK_DIR"
+chmod 0550 "$WORK_DIR"
+chcon u:object_r:system_file:s0 "$WORK_DIR"
+chown system:system "$WORK_DIR"
 
-if [ -f "/data/system/nyazygisk/config.prop" ]; then
-  chmod 644 "/data/system/nyazygisk/config.prop"
-  chcon u:object_r:system_file:s0 "/data/system/nyazygisk/config.prop"
-  chown system:system "/data/system/nyazygisk/config.prop"
-fi
-
-# Clean up legacy /data/adb/nyazygisk directory if present
-if [ -d "/data/adb/nyazygisk" ]; then
-  rm -rf "/data/adb/nyazygisk"
+if [ -f "$WORK_DIR/config.prop" ]; then
+  chmod 0644 "$WORK_DIR/config.prop"
+  chcon u:object_r:system_file:s0 "$WORK_DIR/config.prop"
+  chown system:system "$WORK_DIR/config.prop"
 fi
 
 mkdir "$MODPATH/bin"
@@ -201,7 +173,7 @@ set_perm_recursive "$MODPATH/webroot" 0 0 0755 0644
 
 # If Huawei's Maple is enabled, system_server is created with a special way which is out of Zygisk's control
 HUAWEI_MAPLE_ENABLED=$(grep_prop ro.maple.enable)
-if [ "$HUAWEI_MAPLE_ENABLED" == "1" ]; then
+if [ "$HUAWEI_MAPLE_ENABLED" = "1" ]; then
   ui_print "- Add ro.maple.enable=0"
   echo "ro.maple.enable=0" >>"$MODPATH/system.prop"
 fi

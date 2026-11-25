@@ -11,6 +11,7 @@ import android.graphics.RenderEffect
 import android.graphics.RenderNode
 import android.graphics.RuntimeShader
 import android.graphics.Shader
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.util.Log
@@ -288,7 +289,9 @@ class BackgroundManager(
         val prefs = settings
         val uriString = prefs.getString("custom_background", null)
 
-        val newUri = uriString?.toUri()
+        val newUri = uriString?.toUri()?.takeUnless { uri ->
+            uri.scheme == "file" && uri.path?.let { !File(it).isFile } == true
+        }
 
         if (config.customBackgroundUri?.toString() != newUri?.toString()) {
             Log.d(tag, "加载自定义背景: $uriString")
@@ -320,28 +323,17 @@ class BackgroundManager(
         return try {
             val isVideo = org.uranxsu.manager.ui.component.media.isVideoUri(context, uri)
             val ext = if (isVideo) {
-                val mime = context.contentResolver.getType(uri)
-                when {
-                    mime?.contains("webm", ignoreCase = true) == true -> "webm"
-                    mime?.contains("mkv", ignoreCase = true) == true -> "mkv"
-                    else -> "mp4"
-                }
+                org.uranxsu.manager.ui.component.media.resolveVideoExtension(context, uri)
             } else {
                 "jpg"
             }
 
-            // Remove any previous custom background files so they don't accumulate or conflict
-            context.filesDir.listFiles()?.forEach { file ->
-                if (file.name.startsWith("custom_background")) {
-                    runCatching { file.delete() }
-                }
-            }
-
-            val fileName = "custom_background.$ext"
+            val fileName = "custom_background_${System.currentTimeMillis()}.$ext"
+            val tmpFile = File(context.filesDir, "$fileName.tmp")
             val file = File(context.filesDir, fileName)
 
             context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                FileOutputStream(file).use { outputStream ->
+                FileOutputStream(tmpFile).use { outputStream ->
                     val buffer = ByteArray(16 * 1024)
                     var read: Int
                     while (inputStream.read(buffer).also { read = it } != -1) {
@@ -350,6 +342,22 @@ class BackgroundManager(
                     outputStream.flush()
                 }
             } ?: return null
+
+            if (!tmpFile.isFile || tmpFile.length() == 0L) {
+                tmpFile.delete()
+                return null
+            }
+            if (!tmpFile.renameTo(file)) {
+                tmpFile.copyTo(file, overwrite = true)
+                tmpFile.delete()
+            }
+
+            // Remove older custom background files only after the new file is safely on disk.
+            context.filesDir.listFiles()?.forEach { existing ->
+                if (existing.name.startsWith("custom_background") && existing.name != file.name) {
+                    runCatching { existing.delete() }
+                }
+            }
 
             Uri.fromFile(file)
         } catch (e: Exception) {
@@ -1957,18 +1965,9 @@ private fun BackgroundInitializer(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val isVideo = remember(uri) { org.uranxsu.manager.ui.component.media.isVideoUri(context, uri) }
-
-    LaunchedEffect(isVideo) {
-        if (isVideo) {
-            themeConfig.backgroundImageLoaded = true
-            themeConfig.isThemeChanging = false
-            renderState.imageBitmap = null
-            renderState.blurImageBitmap = null
-        }
+    val isVideo = remember(context, uri) {
+        org.uranxsu.manager.ui.component.media.isVideoUri(context, uri)
     }
-
-    if (isVideo) return
 
     val dynamicColorFromSystem =
         if (Build.VERSION.SDK_INT >= 31) {
@@ -1979,6 +1978,62 @@ private fun BackgroundInitializer(
 
     val calcedCachedSeedColor =
         settings.getInt("cached_seed_color", dynamicColorFromSystem)
+
+    LaunchedEffect(uri, isVideo) {
+        if (isVideo) {
+            renderState.imagePainter = null
+            renderState.blurImageBitmap = null
+            val firstFrame = withContext(Dispatchers.IO) {
+                runCatching {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, uri)
+                        retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    } finally {
+                        runCatching { retriever.release() }
+                    }
+                }.getOrNull()
+            }
+            if (firstFrame != null) {
+                renderState.imageBitmap = firstFrame.asImageBitmap()
+                renderState.seedColor = calcedCachedSeedColor
+                val extracted = firstFrame.extractSeedColor(fallbackColorArgb = calcedCachedSeedColor)
+                renderState.seedColor = extracted
+                settings.putInt("cached_seed_color", extracted)
+            } else {
+                renderState.imageBitmap = null
+            }
+            themeConfig.backgroundImageLoaded = true
+            themeConfig.isThemeChanging = false
+        }
+    }
+
+    if (isVideo) {
+        LaunchedEffect(
+            uri,
+            renderState.imageBitmap,
+            themeConfig.isEnableBlurExp,
+            renderState.blurViewportSize,
+        ) {
+            val frame = renderState.imageBitmap?.asAndroidBitmap()
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                themeConfig.isEnableBlurExp &&
+                frame != null &&
+                renderState.blurViewportSize.width > 0 &&
+                renderState.blurViewportSize.height > 0
+            ) {
+                renderState.blurImageBitmap = frame.createBackgroundBlurImage(
+                    context = context,
+                    viewportSize = renderState.blurViewportSize,
+                    blurRadius = BACKGROUND_BLUR_RADIUS,
+                )
+            } else {
+                renderState.blurImageBitmap = null
+            }
+        }
+        return
+    }
 
     LaunchedEffect(themeConfig.isEnableBlurExp, renderState.blurViewportSize) {
         if (

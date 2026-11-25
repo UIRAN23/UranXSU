@@ -5,14 +5,12 @@
 #include <sys/mman.h>
 #include <sys/mount.h>
 #include <sys/resource.h>
-#include <sys/system_properties.h>
 #include <unistd.h>
 #include <unwind.h>
 #include <fcntl.h>
 #include <atomic>
 #include <cstdarg>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include <lsplt.hpp>
@@ -21,14 +19,17 @@
 #include "daemon.hpp"
 #include "elf_util.h"
 #include "logging.hpp"
+#include "misc.hpp"
 #include "module.hpp"
 #include "module_loader.hpp"
 #include "tracer_pid.hpp"
+#include "zn_hook.hpp"
+#include "zn_loader.hpp"
 #include "zygisk.hpp"
 
 using namespace std;
 
-static std::vector<lsplt::MapInfo> safe_scan_map_infos() {
+std::vector<lsplt::MapInfo> scan_map_infos() {
     auto entries = znn::parseMaps("self");
     std::vector<lsplt::MapInfo> result;
     result.reserve(entries.size());
@@ -37,6 +38,8 @@ static std::vector<lsplt::MapInfo> safe_scan_map_infos() {
     }
     return result;
 }
+
+static std::vector<lsplt::MapInfo> safe_scan_map_infos() { return scan_map_infos(); }
 
 // *********************
 // Zygisk Bootstrapping
@@ -127,11 +130,29 @@ DCL_HOOK_FUNC(static char *, strdup, const char *str) {
     return old_strdup(str);
 }
 
-// Skip actual fork and return cached result if applicable
-DCL_HOOK_FUNC(int, fork) { return (g_ctx && g_ctx->pid >= 0) ? g_ctx->pid : old_fork(); }
+// Skip actual fork and return cached result (including fork failure) if applicable
+DCL_HOOK_FUNC(int, fork) {
+    if (g_ctx && g_ctx->fork_attempted) {
+        if (g_ctx->pid < 0) errno = g_ctx->fork_errno;
+        return g_ctx->pid;
+    }
+    const bool yuki_fork = zn::hook::prepareFork();
+    const int pid = old_fork();
+    const int saved_errno = errno;
+    if (yuki_fork) {
+        if (pid == 0) {
+            zn::hook::afterForkChild();
+        } else {
+            zn::hook::afterForkParent();
+        }
+    }
+    errno = saved_errno;
+    return pid;
+}
 
 // Unmount stuffs in the process's private mount namespace
 DCL_HOOK_FUNC(static int, unshare, int flags) {
+    int saved_errno = errno;
     if (g_ctx && (flags & CLONE_NEWNS) && !(g_ctx->flags & SERVER_FORK_AND_SPECIALIZE)) {
         bool should_unmount = !(g_ctx->info_flags & (PROCESS_IS_MANAGER | PROCESS_GRANTED_ROOT)) &&
                               (g_ctx->flags & DO_REVERT_UNMOUNT);
@@ -147,9 +168,8 @@ DCL_HOOK_FUNC(static int, unshare, int flags) {
         }
     }
 
-    int res = old_unshare(flags);
-    errno = 0;  // Restore errno back to 0
-    return res;
+    errno = saved_errno;
+    return old_unshare(flags);
 }
 
 DCL_HOOK_FUNC(int, property_get, const char *key, char *value, const char *default_value) {
@@ -189,13 +209,11 @@ DCL_HOOK_FUNC(static int, pthread_attr_setstacksize, void *target, size_t size) 
         // Only perform unloading on the main thread
 
         g_hook->restore_plt_hook();
-        if (modloader::HasLoadedImages()) {
+        if (modloader::HasLoadedImages() || zn::hasResidentState()) {
             // Surviving custom-linker modules bind dl_iterate_phdr / dladdr / dlsym /
-            // dlclose through their GOT to interpose.cpp inside libzygisk.so, and those
-            // routines consult g_images in linker.cpp. Unmapping ourselves would leave
-            // dangling function pointers that fault as soon as the module unwinds an
-            // exception or calls dladdr/dlsym (issue #76).
-            LOGV("keep libzygisk.so mapped: custom-linker module(s) still resident");
+            // dlclose through their GOT to interpose.cpp inside libzygisk.so, and ZN
+            // modules / ByteHook trampolines retain function pointers into libzygisk.so.
+            LOGV("keep libzygisk.so mapped: custom-linker or ZN/ByteHook state still resident");
             g_hook->should_unmap = false;
         }
         if (g_hook->should_spoof_maps && g_hook->anonymous_memory_enabled) {
@@ -237,15 +255,17 @@ DCL_HOOK_FUNC(static int, pthread_attr_setstacksize, void *target, size_t size) 
 void trigger_zygote_hooks() {
     LOGI("triggering zygote hook sequence");
     new_strdup(kZygoteInit);
-    char buf[PROP_VALUE_MAX];
+    char buf[92];
     new_property_get("ro.product.cpu.abi", buf, "0");
 }
 
 // -----------------------------------------------------------------
 static size_t get_fd_max() {
     rlimit r{32768, 32768};
-    getrlimit(RLIMIT_NOFILE, &r);
-    return r.rlim_max;
+    if (getrlimit(RLIMIT_NOFILE, &r) != 0 || r.rlim_cur == RLIM_INFINITY) {
+        return 65536;
+    }
+    return std::min<size_t>(static_cast<size_t>(r.rlim_cur), 65536);
 }
 
 ZygiskContext::ZygiskContext(JNIEnv *env, void *args)
@@ -253,6 +273,9 @@ ZygiskContext::ZygiskContext(JNIEnv *env, void *args)
       args{args},
       process(nullptr),
       pid(-1),
+      child_process(false),
+      fork_attempted(false),
+      fork_errno(0),
       flags(0),
       info_flags(0),
       allowed_fds(get_fd_max()),
@@ -265,6 +288,14 @@ ZygiskContext::~ZygiskContext() {
     // Set this to nullptr to prevent leaking local variable.
     // This also disables most plt hooked functions.
     g_ctx = nullptr;
+
+    {
+        mutex_guard lock(hook_info_lock);
+        for (auto &reg : register_info) regfree(&reg.regex);
+        for (auto &ign : ignore_info) regfree(&ign.regex);
+        register_info.clear();
+        ignore_info.clear();
+    }
 
     if (!is_child()) return;
 
@@ -472,7 +503,45 @@ void HookContext::restore_plt_hook() {
 
 // -----------------------------------------------------------------
 
-void HookContext::hook_jni_methods(JNIEnv *env, const char *clz, JNIMethods methods) {
+static jmethodID g_member_getModifiers = nullptr;
+static jint g_modifier_native = 0;
+static std::mutex g_jni_hook_init_mutex;
+static bool g_jni_hook_initialized = false;
+
+static bool ensure_jni_hook_initialized(JNIEnv *env) {
+    if (env == nullptr) return false;
+    std::lock_guard<std::mutex> lk(g_jni_hook_init_mutex);
+    if (g_jni_hook_initialized) return true;
+
+    auto classMember = util::jni::FindClass(env, "java/lang/reflect/Member");
+    if (classMember != nullptr) {
+        g_member_getModifiers = util::jni::GetMethodID(env, classMember, "getModifiers", "()I");
+    }
+    auto classModifier = util::jni::FindClass(env, "java/lang/reflect/Modifier");
+    if (classModifier != nullptr) {
+        auto fieldId = util::jni::GetStaticFieldID(env, classModifier, "NATIVE", "I");
+        if (fieldId != nullptr) {
+            g_modifier_native = util::jni::GetStaticIntField(env, classModifier, fieldId);
+        }
+    }
+    if (g_member_getModifiers == nullptr || g_modifier_native == 0) return false;
+    if (!util::art::ArtMethod::Init(env)) {
+        LOGE("failed to init ArtMethod");
+        return false;
+    }
+    g_jni_hook_initialized = true;
+    return true;
+}
+
+static void hook_jni_methods_impl(JNIEnv *env, const char *clz, JNIMethods methods) {
+    if (env == nullptr || clz == nullptr || methods.empty()) return;
+    if (!ensure_jni_hook_initialized(env)) {
+        for (auto &method : methods) {
+            method.fnPtr = nullptr;
+        }
+        return;
+    }
+
     auto clazz = env->FindClass(clz);
     if (clazz == nullptr) {
         env->ExceptionClear();
@@ -500,8 +569,13 @@ void HookContext::hook_jni_methods(JNIEnv *env, const char *clz, JNIMethods meth
             continue;
         }
         auto method = util::jni::ToReflectedMethod(env, clazz, method_id, is_static);
-        auto modifier = util::jni::CallIntMethod(env, method, member_getModifiers);
-        if ((modifier & MODIFIER_NATIVE) == 0) {
+        if (method == nullptr) {
+            env->ExceptionClear();
+            native_method.fnPtr = nullptr;
+            continue;
+        }
+        auto modifier = util::jni::CallIntMethod(env, method, g_member_getModifiers);
+        if ((modifier & g_modifier_native) == 0) {
             native_method.fnPtr = nullptr;
             continue;
         }
@@ -512,8 +586,14 @@ void HookContext::hook_jni_methods(JNIEnv *env, const char *clz, JNIMethods meth
         native_method.fnPtr = original_method;
     }
 
-    if (hooks.empty()) return;
-    env->RegisterNatives(clazz, hooks.data(), hooks.size());
+    if (!hooks.empty()) {
+        env->RegisterNatives(clazz, hooks.data(), hooks.size());
+    }
+    env->DeleteLocalRef(clazz);
+}
+
+void HookContext::hook_jni_methods(JNIEnv *env, const char *clz, JNIMethods methods) {
+    hook_jni_methods_impl(env, clz, methods);
 }
 
 void HookContext::hook_zygote_jni() {
@@ -545,20 +625,7 @@ void HookContext::hook_zygote_jni() {
     res = vm->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6);
     if (res != JNI_OK || env == nullptr) return;
 
-    auto classMember = util::jni::FindClass(env, "java/lang/reflect/Member");
-    if (classMember != nullptr)
-        member_getModifiers = util::jni::GetMethodID(env, classMember, "getModifiers", "()I");
-    auto classModifier = util::jni::FindClass(env, "java/lang/reflect/Modifier");
-    if (classModifier != nullptr) {
-        auto fieldId = util::jni::GetStaticFieldID(env, classModifier, "NATIVE", "I");
-        if (fieldId != nullptr)
-            MODIFIER_NATIVE = util::jni::GetStaticIntField(env, classModifier, fieldId);
-    }
-    if (member_getModifiers == nullptr || MODIFIER_NATIVE == 0) return;
-    if (!util::art::ArtMethod::Init(env)) {
-        LOGE("failed to init ArtMethod");
-        return;
-    }
+    if (!ensure_jni_hook_initialized(env)) return;
     hook_jni_methods(env, kZygote, zygote_methods);
 
     // Each Zygote entrypoint has several version variants in the table and only one
@@ -609,5 +676,6 @@ void hook_entry(void *start_addr, size_t block_size) {
 }
 
 void hookJniNativeMethods(JNIEnv *env, const char *clz, JNINativeMethod *methods, int numMethods) {
-    g_hook->hook_jni_methods(env, clz, {methods, (size_t) numMethods});
+    if (env == nullptr || clz == nullptr || methods == nullptr || numMethods <= 0) return;
+    hook_jni_methods_impl(env, clz, {methods, static_cast<size_t>(numMethods)});
 }

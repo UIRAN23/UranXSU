@@ -1757,7 +1757,7 @@ pub fn shutdown() -> Result<()> {
 const CONFIG_KEYS: &[(&str, &[&str], &str)] = &[
     ("anonymous_memory", &["0", "1"], "0"),
     ("custom_linker", &["0", "1"], "0"),
-    ("plt_engine", &["bytehook", "lsplt"], "bytehook"),
+    ("plt_engine", &["yukiplt", "lsplt"], "yukiplt"),
 ];
 
 fn config_path() -> PathBuf {
@@ -1780,12 +1780,15 @@ pub fn config_get_all() -> Vec<(&'static str, String)> {
     let stored = read_config_map();
     CONFIG_KEYS
         .iter()
-        .map(|(key, _, default)| {
+        .map(|(key, allowed, default)| {
             let value = stored
                 .iter()
                 .rev()
                 .find(|(k, _)| k == key)
-                .map_or_else(|| (*default).to_owned(), |(_, v)| v.clone());
+                .map(|(_, v)| v.as_str())
+                .filter(|v| allowed.contains(v))
+                .unwrap_or(*default)
+                .to_owned();
             (*key, value)
         })
         .collect()

@@ -183,7 +183,7 @@
     <string name="backup_allowlist">Резервное копирование списка</string>
     <string name="restore_allowlist">Белый список восстановления ключей</string>
     <string name="settings_custom_background">Пользовательский фон приложения</string>
-    <string name="settings_custom_background_summary">Выберите изображение в качестве фона</string>
+    <string name="settings_custom_background_summary">Выберите фото с кадрированием или видео из галереи в качестве фона</string>
     <string name="settings_config_enable_blur">Включить блюр</string>
     <string name="settings_config_enable_blur_summary">Использовать блюр для приложения</string>
     <string name="settings_exp_draw_background_to_blur">Нарисовать кастомный фон для блюра</string>
@@ -877,4 +877,23 @@
     <string name="custom_texts_search_placeholder">Поиск строк…</string>
     <string name="custom_card_crop_title">Кадрирование карточки статуса</string>
     <string name="custom_banner_crop_title">Кадрирование баннера модуля</string>
+    <string name="local_network_permission_description">Разрешение на доступ к локальной сети требуется для проверки обновлений модулей с локальных серверов.</string>
+    <string name="wallpaper_section">Обои и визуальные эффекты</string>
+    <string name="settings_custom_background_change">Сменить обои или видео</string>
+    <string name="media_type_photo">Сейчас: фото</string>
+    <string name="media_type_video">Сейчас: видео</string>
+    <string name="home_card_media_photo_active">Сейчас: фото (нажмите, чтобы заменить)</string>
+    <string name="home_card_media_video_active">Сейчас: зацикленное видео (нажмите, чтобы заменить)</string>
+    <string name="gestures_animations_section">Жесты и анимации</string>
+    <string name="theme_import_dialog_title">Импорт темы (.sukisu)</string>
+    <string name="theme_import_select_all">Выбрать всё</string>
+    <string name="theme_import_select_none">Снять выбор</string>
+    <string name="theme_import_part_colors">Цвета и палитра</string>
+    <string name="theme_import_part_background">Фон приложения</string>
+    <string name="theme_import_part_card_background">Фон карточки статуса</string>
+    <string name="theme_import_part_effects">Прозрачность, затемнение и размытие</string>
+    <string name="theme_import_part_layout">Макет и панель навигации</string>
+    <string name="theme_import_part_texts">Пользовательские тексты</string>
+    <string name="theme_import_adaptive_hint">Обнаружена адаптивная тема: будет применён вариант под текущую светлую или тёмную тему.</string>
+    <string name="theme_import_apply">Применить выбранное</string>
 </resources>

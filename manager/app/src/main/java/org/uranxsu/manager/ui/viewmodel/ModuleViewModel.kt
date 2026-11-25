@@ -62,6 +62,7 @@ sealed interface ModuleUiAction {
 sealed interface ModuleUiEvent {
     data class Error(val message: String) : ModuleUiEvent
     data object RefreshCompleted : ModuleUiEvent
+    data object LocalNetworkPermissionRequired : ModuleUiEvent
     data class EnabledChanged(
         val moduleId: String,
         val enabled: Boolean,
@@ -97,7 +98,7 @@ class ModuleViewModel(
     private val getModuleUpdateChangelog: GetModuleUpdateChangelogUseCase,
 ) : ViewModel() {
     private val controls = MutableStateFlow(ModuleControls())
-    private val mutableEvents = MutableSharedFlow<ModuleUiEvent>(extraBufferCapacity = 1)
+    private val mutableEvents = MutableSharedFlow<ModuleUiEvent>(extraBufferCapacity = 2)
     val events: SharedFlow<ModuleUiEvent> = mutableEvents.asSharedFlow()
 
     val state: StateFlow<ModuleUiState> = combine(
@@ -196,9 +197,12 @@ class ModuleViewModel(
             getBooleanPreference(PREF_CHECK_UPDATE, true),
         )
         refreshInstalledModules(manual, checkUpdates)
-            .onSuccess {
+            .onSuccess { needsLocalNetworkPermission ->
                 controls.update { it.copy(isNeedRefresh = false) }
                 mutableEvents.tryEmit(ModuleUiEvent.RefreshCompleted)
+                if (needsLocalNetworkPermission) {
+                    mutableEvents.emit(ModuleUiEvent.LocalNetworkPermissionRequired)
+                }
             }
             .onFailure { error ->
                 mutableEvents.tryEmit(ModuleUiEvent.Error(error.message.orEmpty()))

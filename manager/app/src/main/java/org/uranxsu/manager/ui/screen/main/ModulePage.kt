@@ -1,5 +1,6 @@
 package org.uranxsu.manager.ui.screen.main
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity.CLIPBOARD_SERVICE
 import android.app.Activity.RESULT_OK
@@ -7,10 +8,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -164,7 +168,7 @@ import org.uranxsu.manager.ui.component.settings.SettingsTextFieldWidget
 import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.navigation.Route
 import org.uranxsu.manager.ui.screen.LabelText
-import org.uranxsu.manager.ui.screen.themeSettings.crop.BackgroundCropActivity
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.getParcelableExtraCompat
 import org.uranxsu.manager.ui.theme.CardConfig
@@ -624,6 +628,8 @@ private fun ModuleList(
     val enqueueDownload = koinInject<EnqueueDownloadUseCase>()
     val observeDownload = koinInject<ObserveDownloadUseCase>()
     val permissionRequestInterface = LocalPermissionRequestInterface.current
+    var requestingLocalNetworkPermission by remember { mutableStateOf(false) }
+    val localNetworkPermissionDescription = stringResource(R.string.local_network_permission_description)
     val scope = rememberCoroutineScope()
     val pullRefreshState = rememberPullToRefreshState()
     val failedEnable = stringResource(R.string.module_failed_to_enable)
@@ -690,6 +696,23 @@ private fun ModuleList(
                 }
 
                 ModuleUiEvent.RefreshCompleted -> Unit
+
+                ModuleUiEvent.LocalNetworkPermissionRequired -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
+                        context.checkSelfPermission(Manifest.permission.ACCESS_LOCAL_NETWORK) != PackageManager.PERMISSION_GRANTED &&
+                        !requestingLocalNetworkPermission
+                    ) {
+                        requestingLocalNetworkPermission = true
+                        permissionRequestInterface.requestPermission(
+                            permission = Manifest.permission.ACCESS_LOCAL_NETWORK,
+                            callback = { granted ->
+                                requestingLocalNetworkPermission = false
+                                if (granted) viewModel.dispatch(ModuleUiAction.Refresh(manual = true))
+                            },
+                            requestDescription = localNetworkPermissionDescription,
+                        )
+                    }
+                }
             }
         }
     }
@@ -727,7 +750,7 @@ private fun ModuleList(
     }
 
     val pickModuleBannerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
+        contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         val target = bannerTargetModule ?: return@rememberLauncherForActivityResult
         if (uri == null) {
@@ -750,14 +773,13 @@ private fun ModuleList(
             }
         } else {
             val outputUri = createBackgroundCropOutputUri(context, "module_banner_crop")
-            val intent = Intent(context, BackgroundCropActivity::class.java).apply {
-                putExtra(UCrop.EXTRA_INPUT_URI, uri)
-                putExtra(UCrop.EXTRA_OUTPUT_URI, outputUri)
-                putExtra(UCrop.EXTRA_ASPECT_RATIO_X, 16f)
-                putExtra(UCrop.EXTRA_ASPECT_RATIO_Y, 7f)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            }
+            val intent = createBackgroundCropIntent(
+                context = context,
+                sourceUri = uri,
+                outputUri = outputUri,
+                aspectRatioX = 16f,
+                aspectRatioY = 7f,
+            )
             cropModuleBannerLauncher.launch(intent)
         }
     }
@@ -826,7 +848,7 @@ private fun ModuleList(
     }
 
     val pickShortcutIconLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent(),
+        contract = ActivityResultContracts.PickVisualMedia(),
     ) { uri ->
         shortcutIconUri = uri?.toString()
     }
@@ -1086,7 +1108,9 @@ private fun ModuleList(
                             bannerActionModule = mod
                         } else {
                             bannerTargetModule = mod
-                            pickModuleBannerLauncher.launch("*/*")
+                            pickModuleBannerLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                            )
                         }
                     },
                     showMoreModuleInfo = uiState.showMoreModuleInfo,
@@ -1111,7 +1135,9 @@ private fun ModuleList(
                     onClick = {
                         bannerActionModule = null
                         bannerTargetModule = mod
-                        pickModuleBannerLauncher.launch("*/*")
+                        pickModuleBannerLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                        )
                     },
                 ) {
                     Text(stringResource(R.string.module_banner_replace))
@@ -1199,7 +1225,9 @@ private fun ModuleList(
                                 isOnBackground = false,
                                 title = stringResource(id = R.string.module_shortcut_icon_pick),
                                 onClick = {
-                                    pickShortcutIconLauncher.launch("image/*")
+                                    pickShortcutIconLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                                    )
                                 },
                             ) {
                                 Icon(

@@ -41,6 +41,7 @@ import org.uranxsu.manager.data.shell.KsuCliRepository
 import org.uranxsu.manager.domain.model.InstalledModule
 import org.uranxsu.manager.ui.component.media.isVideoPath
 import org.uranxsu.manager.ui.component.media.isVideoUri
+import org.uranxsu.manager.ui.component.media.resolveVideoExtension
 
 private const val TAG = "ModuleBanner"
 private const val MODULE_DIR = "/data/adb/modules/"
@@ -139,7 +140,6 @@ fun rememberModuleBannerVideo(moduleId: String, banner: String?, enabled: Boolea
         value = withContext(Dispatchers.IO) {
             runCatching {
                 val shell = ksuCli.getRootShell()
-                val targetFile = File(context.cacheDir, "banner_${moduleId}_${banner.substringAfterLast('/')}")
                 val srcFile = SuFile("/data/adb/modules/$moduleId/$banner").apply { this.shell = shell }
                 val updateSrcFile = SuFile("/data/adb/modules_update/$moduleId/$banner").apply { this.shell = shell }
                 val chosen = when {
@@ -148,10 +148,26 @@ fun rememberModuleBannerVideo(moduleId: String, banner: String?, enabled: Boolea
                     else -> null
                 } ?: return@runCatching null
 
-                if (!targetFile.exists() || targetFile.length() != chosen.length()) {
+                val bannerName = banner.substringAfterLast('/')
+                val cachePrefix = "banner_${moduleId}_"
+                val targetFile = File(
+                    context.cacheDir,
+                    "${cachePrefix}${chosen.length()}_${chosen.lastModified()}_$bannerName",
+                )
+                if (!targetFile.isFile || targetFile.length() != chosen.length()) {
+                    val tmpFile = File(context.cacheDir, "${targetFile.name}.tmp")
                     SuFileInputStream.open(chosen).use { input ->
-                        targetFile.outputStream().use { output ->
+                        tmpFile.outputStream().use { output ->
                             input.copyTo(output)
+                        }
+                    }
+                    if (!tmpFile.renameTo(targetFile)) {
+                        tmpFile.copyTo(targetFile, overwrite = true)
+                        tmpFile.delete()
+                    }
+                    context.cacheDir.listFiles()?.forEach { cached ->
+                        if (cached.name.startsWith(cachePrefix) && cached.name != targetFile.name) {
+                            runCatching { cached.delete() }
                         }
                     }
                 }
@@ -199,30 +215,42 @@ object ModuleBannerEditor {
         module: InstalledModule,
         uri: Uri,
     ): Result<Unit> = runCatching {
-        val raw = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: error("Unable to read selected media")
-        require(raw.isNotEmpty() && raw.size <= MAX_SOURCE_BYTES) { "Media is empty or too large" }
+        val declaredSize = runCatching {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+        }.getOrNull() ?: -1L
+        require(declaredSize <= MAX_SOURCE_BYTES) { "Media is too large" }
 
         val isVideo = isVideoUri(context, uri)
         val dirs = moduleDirectories(shell, module.dirId)
         require(dirs.isNotEmpty()) { "Module directory not found" }
 
         if (isVideo) {
-            val mime = context.contentResolver.getType(uri)
-            val ext = when {
-                mime?.contains("webm", ignoreCase = true) == true -> "webm"
-                mime?.contains("mkv", ignoreCase = true) == true -> "mkv"
-                else -> "mp4"
-            }
+            val ext = resolveVideoExtension(context, uri)
             val fileName = "$CUSTOM_BANNER_PREFIX.$ext"
+            val buffer = ByteArray(64 * 1024)
             dirs.forEach { dir ->
                 backupOriginalBanner(shell, dir, readText(shell, "$dir/module.prop"))
                 removeCustomBannerFiles(shell, dir, keep = fileName)
-                writeBytes(shell, "$dir/$fileName", raw)
+                var copiedBytes = 0L
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    SuFileOutputStream.open(suFile(shell, "$dir/$fileName"), false).use { output ->
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            copiedBytes += read
+                            require(copiedBytes <= MAX_SOURCE_BYTES) { "Media is too large" }
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                } ?: error("Unable to read selected media")
+                require(copiedBytes > 0L) { "Media is empty" }
                 check(setBannerValue(shell, dir, fileName)) { "Failed to update module.prop" }
             }
             return@runCatching
         }
+
+        val raw = readBoundedBytes(context, uri, MAX_SOURCE_BYTES)
+        require(raw.isNotEmpty()) { "Media is empty" }
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
@@ -237,6 +265,22 @@ object ModuleBannerEditor {
             check(setBannerValue(shell, dir, fileName)) { "Failed to update module.prop" }
         }
     }.onFailure { Log.w(TAG, "import banner for ${module.dirId} failed", it) }
+
+    private fun readBoundedBytes(context: Context, uri: Uri, maxBytes: Long): ByteArray {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(16 * 1024)
+            var total = 0L
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                total += read
+                require(total <= maxBytes) { "Media is too large" }
+                output.write(buffer, 0, read)
+            }
+            return output.toByteArray()
+        } ?: error("Unable to read selected media")
+    }
 
     fun remove(shell: Shell, module: InstalledModule): Result<Unit> = runCatching {
         val dirs = moduleDirectories(shell, module.dirId)

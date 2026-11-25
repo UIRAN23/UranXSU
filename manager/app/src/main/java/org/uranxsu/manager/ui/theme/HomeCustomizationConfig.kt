@@ -54,30 +54,34 @@ class HomeCustomizationConfig(
         runCatching {
             val isVideo = org.uranxsu.manager.ui.component.media.isVideoUri(context, uri)
             val ext = if (isVideo) {
-                val mime = context.contentResolver.getType(uri)
-                when {
-                    mime?.contains("webm", ignoreCase = true) == true -> "webm"
-                    mime?.contains("mkv", ignoreCase = true) == true -> "mkv"
-                    else -> "mp4"
-                }
+                org.uranxsu.manager.ui.component.media.resolveVideoExtension(context, uri)
             } else {
                 "jpg"
             }
 
-            // Clean up old status card media files
-            context.applicationContext.filesDir.listFiles()?.forEach { file ->
-                if (file.name.startsWith("home_status_card_bg")) {
-                    runCatching { file.delete() }
-                }
-            }
-
-            val dest = File(context.applicationContext.filesDir, "home_status_card_bg.$ext")
+            val filesDir = context.applicationContext.filesDir
+            val fileName = "home_status_card_bg_${System.currentTimeMillis()}.$ext"
+            val tmpDest = File(filesDir, "$fileName.tmp")
+            val dest = File(filesDir, fileName)
             context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(dest).use { output ->
+                FileOutputStream(tmpDest).use { output ->
                     input.copyTo(output)
                     output.flush()
                 }
             } ?: error("Cannot open selected media")
+            check(tmpDest.isFile && tmpDest.length() > 0L) { "Copied card media is empty" }
+            if (!tmpDest.renameTo(dest)) {
+                tmpDest.copyTo(dest, overwrite = true)
+                tmpDest.delete()
+            }
+
+            // Clean up older status card media files only after the new file is safely stored.
+            filesDir.listFiles()?.forEach { file ->
+                if (file.name.startsWith("home_status_card_bg") && file.name != dest.name) {
+                    runCatching { file.delete() }
+                }
+            }
+
             settings.putString(KEY_STATUS_CARD_IMAGE, dest.absolutePath)
             statusCardImagePath = dest.absolutePath
             statusCardImageVersion++
@@ -91,13 +95,15 @@ class HomeCustomizationConfig(
         runCatching {
             require(sourceFile.isFile) { "Source file does not exist" }
             val ext = sourceFile.extension.takeIf { it.isNotBlank() } ?: "jpg"
-            context.applicationContext.filesDir.listFiles()?.forEach { file ->
-                if (file.name.startsWith("home_status_card_bg")) {
+            val filesDir = context.applicationContext.filesDir
+            val dest = File(filesDir, "home_status_card_bg_${System.currentTimeMillis()}.$ext")
+            sourceFile.copyTo(dest, overwrite = true)
+            check(dest.isFile && dest.length() > 0L) { "Copied card media is empty" }
+            filesDir.listFiles()?.forEach { file ->
+                if (file.name.startsWith("home_status_card_bg") && file.name != dest.name) {
                     runCatching { file.delete() }
                 }
             }
-            val dest = File(context.applicationContext.filesDir, "home_status_card_bg.$ext")
-            sourceFile.copyTo(dest, overwrite = true)
             settings.putString(KEY_STATUS_CARD_IMAGE, dest.absolutePath)
             statusCardImagePath = dest.absolutePath
             statusCardImageVersion++

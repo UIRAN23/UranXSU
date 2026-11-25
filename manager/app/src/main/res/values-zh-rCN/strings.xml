@@ -204,7 +204,7 @@
     <string name="backup_allowlist">备份应用列表</string>
     <string name="restore_allowlist">还原应用列表</string>
     <string name="settings_custom_background">自定义背景</string>
-    <string name="settings_custom_background_summary">选择一张图片作为应用背景</string>
+    <string name="settings_custom_background_summary">从系统媒体选择器选取图片（支持裁剪）或循环视频作为背景</string>
     <string name="background_crop_method_title">选择裁切方式</string>
     <string name="background_crop_method_in_app">应用内裁切</string>
     <string name="background_crop_method_external">外部裁切</string>
@@ -785,4 +785,23 @@
     <string name="zygisk_soft_reboot_summary">重启 Android 用户空间以应用 Zygisk 变更</string>
     <string name="zygisk_soft_reboot_confirm">立即执行模拟软重启以应用 Zygisk 变更？</string>
     <string name="zygisk_modules_section">Zygisk 模块</string>
+    <string name="local_network_permission_description">需要本地网络权限以检查来自局域网主机的模块更新。</string>
+    <string name="wallpaper_section">壁纸与视觉效果</string>
+    <string name="settings_custom_background_change">更换壁纸 / 视频</string>
+    <string name="media_type_photo">当前：图片</string>
+    <string name="media_type_video">当前：视频</string>
+    <string name="home_card_media_photo_active">当前：图片（点击更换）</string>
+    <string name="home_card_media_video_active">当前：循环视频（点击更换）</string>
+    <string name="gestures_animations_section">手势与动画</string>
+    <string name="theme_import_dialog_title">导入主题 (.sukisu)</string>
+    <string name="theme_import_select_all">全选</string>
+    <string name="theme_import_select_none">全不选</string>
+    <string name="theme_import_part_colors">颜色与调色板</string>
+    <string name="theme_import_part_background">应用壁纸</string>
+    <string name="theme_import_part_card_background">状态卡片背景</string>
+    <string name="theme_import_part_effects">透明度、暗化与模糊</string>
+    <string name="theme_import_part_layout">主屏与导航布局</string>
+    <string name="theme_import_part_texts">自定义界面文本</string>
+    <string name="theme_import_adaptive_hint">检测到自适应主题：将应用与当前浅色/深色模式匹配的变体。</string>
+    <string name="theme_import_apply">应用所选</string>
 </resources>

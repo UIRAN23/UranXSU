@@ -2,6 +2,7 @@ package org.uranxsu.manager.ui.screen.themeSettings
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -11,6 +12,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
@@ -114,8 +116,8 @@ import org.uranxsu.manager.ui.component.settings.SettingsSwitchWidget
 import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.screen.themeSettings.component.LanguageSelectionDialog
 import org.uranxsu.manager.ui.screen.themeSettings.component.ThemeSettingsDialogs
-import org.uranxsu.manager.ui.screen.themeSettings.crop.BackgroundCropActivity
 import org.uranxsu.manager.ui.screen.themeSettings.crop.backgroundCropSize
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.BottomBarStyle
@@ -208,59 +210,66 @@ fun ThemeSettingsScreen(
     val launchInAppCrop = { sourceUri: Uri ->
         val outputUri = createBackgroundCropOutputUri(context, "background_crop_ucrop")
         val (screenWidth, screenHeight) = context.backgroundCropSize()
-        val intent = Intent(context, BackgroundCropActivity::class.java).apply {
-            putExtra(UCrop.EXTRA_INPUT_URI, sourceUri)
-            putExtra(UCrop.EXTRA_OUTPUT_URI, outputUri)
-            putExtra(UCrop.EXTRA_ASPECT_RATIO_X, screenWidth.toFloat())
-            putExtra(UCrop.EXTRA_ASPECT_RATIO_Y, screenHeight.toFloat())
-            putExtra(UCrop.EXTRA_MAX_SIZE_X, screenWidth)
-            putExtra(UCrop.EXTRA_MAX_SIZE_Y, screenHeight)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-        }
+        val intent = createBackgroundCropIntent(
+            context = context,
+            sourceUri = sourceUri,
+            outputUri = outputUri,
+            aspectRatioX = screenWidth.toFloat(),
+            aspectRatioY = screenHeight.toFloat(),
+            maxSizeX = screenWidth,
+            maxSizeY = screenHeight,
+        )
 
         uCropLauncher.launch(intent)
     }
 
     val launchExternalCrop = { sourceUri: Uri ->
         val uri = createBackgroundCropOutputUri(context, "background_crop_external")
-        context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-            context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                inputStream.copyTo(outputStream)
-            }
-        }
+        val copied = runCatching {
+            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                } ?: error("Failed to open external crop output")
+            } ?: error("Failed to open selected media")
+        }.isSuccess
 
-        val (screenWidth, screenHeight) = context.backgroundCropSize()
-        val intent = Intent("com.android.camera.action.CROP").apply {
-            setDataAndType(uri, "image/*")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            putExtra("crop", "true")
-            putExtra("aspectX", screenWidth)
-            putExtra("aspectY", screenHeight)
-            putExtra("outputX", screenWidth)
-            putExtra("outputY", screenHeight)
-            putExtra("return-data", false)
-            putExtra(MediaStore.EXTRA_OUTPUT, uri)
-        }
-
-        try {
-            pendingExternalCropOutputUri = uri
-            externalCropLauncher.launch(intent)
-        } catch (t: Throwable) {
-            Log.e("ThemeSettings", "External Crop failed, fallback to in-app crop", t)
-            pendingExternalCropOutputUri = null
-            Toast.makeText(
-                context,
-                externalCropUnavailable,
-                Toast.LENGTH_SHORT,
-            ).show()
+        if (!copied) {
+            Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
             launchInAppCrop(sourceUri)
+        } else {
+            val (screenWidth, screenHeight) = context.backgroundCropSize()
+            val intent = Intent("com.android.camera.action.CROP").apply {
+                clipData = ClipData.newRawUri("crop_output", uri)
+                setDataAndType(uri, "image/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                putExtra("crop", "true")
+                putExtra("aspectX", screenWidth)
+                putExtra("aspectY", screenHeight)
+                putExtra("outputX", screenWidth)
+                putExtra("outputY", screenHeight)
+                putExtra("return-data", false)
+                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            }
+
+            try {
+                pendingExternalCropOutputUri = uri
+                externalCropLauncher.launch(intent)
+            } catch (t: Throwable) {
+                Log.e("ThemeSettings", "External Crop failed, fallback to in-app crop", t)
+                pendingExternalCropOutputUri = null
+                Toast.makeText(
+                    context,
+                    externalCropUnavailable,
+                    Toast.LENGTH_SHORT,
+                ).show()
+                launchInAppCrop(sourceUri)
+            }
         }
     }
 
     val pickImageLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent(),
+        ActivityResultContracts.PickVisualMedia(),
     ) { uri: Uri? ->
         uri?.let {
             if (isVideoUri(context, it)) {
@@ -359,8 +368,17 @@ fun ThemeSettingsScreen(
             }
 
             item {
-                // 外观设置
+                // Appearance & Colors
                 AppearanceSettings(
+                    state = settingsState,
+                    viewModel = settingsViewModel,
+                    coroutineScope = coroutineScope,
+                )
+            }
+
+            item {
+                // Wallpaper & Effects
+                WallpaperEffectsSettings(
                     state = settingsState,
                     viewModel = settingsViewModel,
                     pickImageLauncher = pickImageLauncher,
@@ -368,10 +386,24 @@ fun ThemeSettingsScreen(
                 )
             }
 
+            item { HomeCustomizationSettings() }
+
             item {
-                // Predictive Back Settings
+                // Interface & Navigation
+                CustomizationSettings(
+                    homeUiState = homeUiState,
+                    homeViewModel = homeViewModel,
+                    moduleUiState = moduleUiState,
+                    moduleViewModel = moduleViewModel,
+                    settingsUiState = settingsState,
+                    settingsViewModel = settingsViewModel,
+                )
+            }
+
+            item {
+                // Gestures & Animations
                 SegmentedColumn(
-                    title = stringResource(R.string.predictive_back_settings),
+                    title = stringResource(R.string.gestures_animations_section),
                 ) {
                     item {
                         PredictiveBackAnimationWidget(settingsState) { animation ->
@@ -389,13 +421,6 @@ fun ThemeSettingsScreen(
                             )
                         }
                     }
-                }
-            }
-
-            item {
-                SegmentedColumn(
-                    title = stringResource(R.string.settings_pager_gesture_mode),
-                ) {
                     item {
                         SettingsSwitchWidget(
                             icon = Icons.TwoTone.Swipe,
@@ -429,21 +454,7 @@ fun ThemeSettingsScreen(
                 }
             }
 
-            item {
-                // 自定义设置
-                CustomizationSettings(
-                    homeUiState = homeUiState,
-                    homeViewModel = homeViewModel,
-                    moduleUiState = moduleUiState,
-                    moduleViewModel = moduleViewModel,
-                    settingsUiState = settingsState,
-                    settingsViewModel = settingsViewModel,
-                )
-            }
-
             item { AppIconSettings(state = settingsState, viewModel = settingsViewModel) }
-
-            item { HomeCustomizationSettings() }
 
             item {
                 ThemePackageSettings(
@@ -515,16 +526,11 @@ fun PredictiveBackAnimationDirectionWidget(
 private fun AppearanceSettings(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
-    pickImageLauncher: ManagedActivityResultLauncher<String, Uri?>,
     coroutineScope: CoroutineScope,
 ) {
     val themeConfig: ThemeConfig = koinInject()
     val cardConfig: CardConfig = koinInject()
-    val backgroundManager: BackgroundManager = koinInject()
     val paletteStyles = state.dynamicColorSpec.availablePaletteStyles()
-    val configuration = LocalConfiguration.current
-    val isPortrait = configuration.screenWidthDp < configuration.screenHeightDp ||
-        (configuration.screenHeightDp.toFloat() / configuration.screenWidthDp > 1.4f)
     SegmentedColumn(title = stringResource(R.string.appearance_settings)) {
         item {
             // 语言设置
@@ -642,6 +648,61 @@ private fun AppearanceSettings(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun WallpaperEffectsSettings(
+    state: SettingsUiState,
+    viewModel: SettingsViewModel,
+    pickImageLauncher: ManagedActivityResultLauncher<PickVisualMediaRequest, Uri?>,
+    coroutineScope: CoroutineScope,
+) {
+    val context = LocalContext.current
+    val themeConfig: ThemeConfig = koinInject()
+    val backgroundManager: BackgroundManager = koinInject()
+    val activeBgUri = themeConfig.customBackgroundUri
+    val isVideoBg = remember(context, activeBgUri) {
+        activeBgUri != null && isVideoUri(context, activeBgUri)
+    }
+    val activeTypeLabel = if (isVideoBg) {
+        stringResource(R.string.media_type_video)
+    } else {
+        stringResource(R.string.media_type_photo)
+    }
+
+    SegmentedColumn(title = stringResource(R.string.wallpaper_section)) {
+        expandableItem(
+            expanded = state.isCustomBackgroundEnabled,
+            topContent = {
+                CustomBackgroundSettings(
+                    state = state,
+                    viewModel = viewModel,
+                    pickImageLauncher = pickImageLauncher,
+                )
+            },
+            bottomContent = {
+                item(topPadding = 1.dp) {
+                    SettingsJumpPageWidget(
+                        icon = Icons.TwoTone.Wallpaper,
+                        title = stringResource(R.string.settings_custom_background_change),
+                        description = activeTypeLabel,
+                        onClick = {
+                            pickImageLauncher.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                            )
+                        },
+                    )
+                }
+                backgroundAdjustmentControls(
+                    state,
+                    viewModel,
+                    coroutineScope,
+                    themeConfig,
+                    backgroundManager,
+                )
+            },
+        )
 
         item(visible = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             SettingsSwitchWidget(
@@ -658,41 +719,7 @@ private fun AppearanceSettings(
             )
         }
 
-        item(visible = isPortrait) {
-            SettingsSwitchWidget(
-                icon = Icons.TwoTone.Dock,
-                title = stringResource(R.string.enable_floating_bottom_bar),
-                description = stringResource(R.string.enable_floating_bottom_bar_summary),
-                checked = themeConfig.bottomBarStyle == BottomBarStyle.FLOATING,
-                onCheckedChange = { enabled ->
-                    val style = if (enabled) BottomBarStyle.FLOATING else BottomBarStyle.MATERIAL3_EXPRESSIVE
-                    backgroundManager.saveBottomBarStyle(style)
-                },
-            )
-        }
-
-        expandableItem(
-            expanded = state.isCustomBackgroundEnabled,
-            topContent = {
-                CustomBackgroundSettings(
-                    state = state,
-                    viewModel = viewModel,
-                    pickImageLauncher = pickImageLauncher,
-                )
-            },
-            bottomContent = {
-                backgroundAdjustmentControls(
-                    state,
-                    viewModel,
-                    coroutineScope,
-                    themeConfig,
-                    backgroundManager,
-                )
-            },
-        )
-
-        item(topPadding = 1.dp) {
-            // 刷写/输出界面卡片背景。启用自定义背景后强制开启，避免日志文字压在背景图上。
+        item {
             SettingsSwitchWidget(
                 icon = Icons.TwoTone.Wallpaper,
                 title = stringResource(id = R.string.settings_flash_card_background),
@@ -716,40 +743,22 @@ private fun CustomizationSettings(
     homeViewModel: HomeViewModel,
     moduleViewModel: ModuleViewModel,
 ) {
+    val themeConfig: ThemeConfig = koinInject()
+    val backgroundManager: BackgroundManager = koinInject()
+    val configuration = LocalConfiguration.current
+    val isPortrait = configuration.screenWidthDp < configuration.screenHeightDp ||
+        (configuration.screenHeightDp.toFloat() / configuration.screenWidthDp > 1.4f)
+
     SegmentedColumn(title = stringResource(R.string.custom_settings)) {
-        item {
-            // 显示更多模块信息
+        item(visible = isPortrait) {
             SettingsSwitchWidget(
-                icon = Icons.TwoTone.Info,
-                title = stringResource(R.string.show_more_module_info),
-                description = stringResource(R.string.show_more_module_info_summary),
-                checked = moduleUiState.showMoreModuleInfo,
+                icon = Icons.TwoTone.Dock,
+                title = stringResource(R.string.enable_floating_bottom_bar),
+                description = stringResource(R.string.enable_floating_bottom_bar_summary),
+                checked = themeConfig.bottomBarStyle == BottomBarStyle.FLOATING,
                 onCheckedChange = { enabled ->
-                    moduleViewModel.dispatch(ModuleUiAction.SetShowMoreInfo(enabled))
-                },
-            )
-        }
-
-        item {
-            // 使用内置Mono字体开关
-            SettingsSwitchWidget(
-                icon = Icons.TwoTone.FormatSize,
-                title = stringResource(R.string.settings_custom_monospace_font),
-                description = stringResource(R.string.settings_custom_monospace_font_summary),
-                checked = settingsUiState.useBuiltinMonoFont,
-                onCheckedChange = { settingsViewModel.handleBuiltinMonospaceFontChange(it) },
-            )
-        }
-
-        item {
-            // 简洁模式开关
-            SettingsSwitchWidget(
-                icon = Icons.TwoTone.Brush,
-                title = stringResource(R.string.simple_mode),
-                description = stringResource(R.string.simple_mode_summary),
-                checked = homeUiState.isSimpleMode,
-                onCheckedChange = { enabled ->
-                    homeViewModel.dispatch(HomeUiAction.SetSimpleMode(enabled))
+                    val style = if (enabled) BottomBarStyle.FLOATING else BottomBarStyle.MATERIAL3_EXPRESSIVE
+                    backgroundManager.saveBottomBarStyle(style)
                 },
             )
         }
@@ -775,6 +784,43 @@ private fun CustomizationSettings(
                 onCheckedChange = { enabled ->
                     homeViewModel.dispatch(HomeUiAction.SetHomeCardIcons(enabled))
                 },
+            )
+        }
+
+        item {
+            // 简洁模式开关
+            SettingsSwitchWidget(
+                icon = Icons.TwoTone.Brush,
+                title = stringResource(R.string.simple_mode),
+                description = stringResource(R.string.simple_mode_summary),
+                checked = homeUiState.isSimpleMode,
+                onCheckedChange = { enabled ->
+                    homeViewModel.dispatch(HomeUiAction.SetSimpleMode(enabled))
+                },
+            )
+        }
+
+        item {
+            // 显示更多模块信息
+            SettingsSwitchWidget(
+                icon = Icons.TwoTone.Info,
+                title = stringResource(R.string.show_more_module_info),
+                description = stringResource(R.string.show_more_module_info_summary),
+                checked = moduleUiState.showMoreModuleInfo,
+                onCheckedChange = { enabled ->
+                    moduleViewModel.dispatch(ModuleUiAction.SetShowMoreInfo(enabled))
+                },
+            )
+        }
+
+        item {
+            // 使用内置Mono字体开关
+            SettingsSwitchWidget(
+                icon = Icons.TwoTone.FormatSize,
+                title = stringResource(R.string.settings_custom_monospace_font),
+                description = stringResource(R.string.settings_custom_monospace_font_summary),
+                checked = settingsUiState.useBuiltinMonoFont,
+                onCheckedChange = { settingsViewModel.handleBuiltinMonospaceFontChange(it) },
             )
         }
     }
@@ -915,10 +961,8 @@ private fun DpiSliderControls(
 private fun CustomBackgroundSettings(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
-    pickImageLauncher: ManagedActivityResultLauncher<String, Uri?>,
+    pickImageLauncher: ManagedActivityResultLauncher<PickVisualMediaRequest, Uri?>,
 ) {
-    // TODO Portrait/Landscape wallpaper split
-
     SettingsSwitchWidget(
         icon = Icons.TwoTone.Wallpaper,
         title = stringResource(id = R.string.settings_custom_background),
@@ -926,7 +970,9 @@ private fun CustomBackgroundSettings(
         checked = state.isCustomBackgroundEnabled,
         onCheckedChange = { isChecked ->
             if (isChecked) {
-                pickImageLauncher.launch("*/*")
+                pickImageLauncher.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                )
             } else {
                 viewModel.dispatch(SettingsUiAction.RemoveCustomBackground)
             }

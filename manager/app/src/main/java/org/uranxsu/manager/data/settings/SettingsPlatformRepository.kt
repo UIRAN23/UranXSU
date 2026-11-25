@@ -23,6 +23,7 @@ import org.uranxsu.manager.magica.BootCompletedReceiver
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.CardConfig
 import org.uranxsu.manager.ui.theme.ThemeConfig
+import org.uranxsu.manager.ui.util.LauncherIconUtils
 
 class SettingsPlatformRepository(
     private val application: Application,
@@ -125,18 +126,21 @@ class SettingsPlatformRepository(
             }
 
             is AppearanceSetting.CustomBackground -> {
+                val wasEnabled = settings.getString("custom_background", null) != null
                 check(
                     backgroundManager.saveAndApplyCustomBackground(
                         application,
                         setting.uri.toUri(),
                     ),
                 )
-                backgroundManager.saveBackgroundDim(0.3f)
-                backgroundManager.saveEnableBlur(true)
-                backgroundManager.saveEnableBlurExp(false)
-                backgroundManager.saveUseBackgroundSeedColor(true)
-                backgroundManager.saveEnableHighContrastMode(false)
-                cardConfig.cardElevation = 0.dp
+                if (!wasEnabled) {
+                    backgroundManager.saveBackgroundDim(0.3f)
+                    backgroundManager.saveEnableBlur(true)
+                    backgroundManager.saveEnableBlurExp(false)
+                    backgroundManager.saveUseBackgroundSeedColor(true)
+                    backgroundManager.saveEnableHighContrastMode(false)
+                    cardConfig.cardElevation = 0.dp
+                }
                 cardConfig.updateBackground(true)
                 cardConfig.save()
             }
@@ -338,19 +342,7 @@ class SettingsPlatformRepository(
     }
 
     private fun toggleLauncherIcon(useAlt: Boolean) {
-        val packageName = application.packageName
-        val main = ComponentName(packageName, "org.uranxsu.manager.ui.MainActivity")
-        val alias = ComponentName(packageName, "org.uranxsu.manager.ui.MainActivityAlias")
-        application.packageManager.setComponentEnabledSetting(
-            if (useAlt) alias else main,
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            PackageManager.DONT_KILL_APP,
-        )
-        application.packageManager.setComponentEnabledSetting(
-            if (useAlt) main else alias,
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-            PackageManager.DONT_KILL_APP,
-        )
+        LauncherIconUtils.apply(application, useAlt)
     }
 
     private fun loadModuleUpdatePreference(): Boolean {

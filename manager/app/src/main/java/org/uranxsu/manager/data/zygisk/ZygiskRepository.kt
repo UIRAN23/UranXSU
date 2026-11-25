@@ -198,12 +198,15 @@ private data class ZygiskConfigData(
     @SerializedName("custom_linker")
     val customLinker: String = "0",
     @SerializedName("plt_engine")
-    val pltEngine: String = "bytehook",
+    val pltEngine: String = "yukiplt",
 ) {
     fun toDomain() = ZygiskConfig(
         anonymousMemory = anonymousMemory == "1",
         customLinker = customLinker == "1",
-        pltEngine = pltEngine.ifBlank { "bytehook" },
+        pltEngine = when {
+            pltEngine.isBlank() || pltEngine == "bytehook" -> "yukiplt"
+            else -> pltEngine
+        },
     )
 }
 

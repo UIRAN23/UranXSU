@@ -3,6 +3,7 @@ package org.uranxsu.manager.ui.util
 import android.content.Context
 import android.net.Uri
 import java.io.File
+import org.uranxsu.manager.ui.component.media.isVideoFile
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.BottomBarStyle
 import org.uranxsu.manager.ui.theme.CardConfig
@@ -152,11 +153,13 @@ object ThemePackageApplier {
         enableSwipeDismiss: Boolean,
         pagerInterceptionMode: Int,
     ): Triple<ThemePackageData, File?, File?> {
-        val bgFile = File(context.applicationContext.filesDir, "custom_background.jpg")
-            .takeIf { cardConfig.isCustomBackgroundEnabled && it.isFile }
+        val resolvedBgFile = themeConfig.customBackgroundUri?.path?.let(::File)?.takeIf { it.isFile }
+            ?: context.applicationContext.filesDir.listFiles()
+                ?.firstOrNull { it.isFile && it.name.startsWith("custom_background") && !it.name.endsWith(".tmp") }
+        val bgFile = resolvedBgFile?.takeIf { cardConfig.isCustomBackgroundEnabled && !isVideoFile(it) }
         val cardBgFile = homeCustomization.statusCardImagePath
             ?.let(::File)
-            ?.takeIf { it.isFile }
+            ?.takeIf { it.isFile && !isVideoFile(it) }
         val texts = customTextConfig.customTexts
         val data = ThemePackageData(
             version = ThemePackageStorage.BASE_VERSION,

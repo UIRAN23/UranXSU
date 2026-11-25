@@ -125,8 +125,8 @@ fun BuiltinZygiskScreen() {
         providerTargets.indexOf(info.id).coerceAtLeast(0)
     }
 
-    val pltEngines = remember { listOf("bytehook", "lsplt") }
-    val pltLabels = remember { listOf("ByteHook", "LSPlt") }
+    val pltEngines = remember { listOf("yukiplt", "lsplt") }
+    val pltLabels = remember { listOf("YukiPLT", "LSPlt") }
     val selectedPltIdx = pltEngines.indexOf(config.pltEngine).coerceAtLeast(0)
 
     Scaffold(
@@ -310,7 +310,7 @@ fun BuiltinZygiskScreen() {
                                 items = pltLabels,
                                 selectedIndex = selectedPltIdx,
                                 onSelectedIndexChange = { idx ->
-                                    val engine = pltEngines.getOrElse(idx) { "bytehook" }
+                                    val engine = pltEngines.getOrElse(idx) { "yukiplt" }
                                     scope.launch {
                                         val ok = viewModel.setConfig("plt_engine", engine)
                                         snackbarHost.showReplacingSnackbar(

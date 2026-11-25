@@ -2,6 +2,7 @@ package org.uranxsu.manager.ui.screen.themeSettings.crop
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -700,6 +701,27 @@ fun createBackgroundCropOutputUri(context: android.content.Context, prefix: Stri
         "${context.packageName}.fileprovider",
         outputFile,
     )
+}
+
+fun createBackgroundCropIntent(
+    context: android.content.Context,
+    sourceUri: Uri,
+    outputUri: Uri,
+    aspectRatioX: Float,
+    aspectRatioY: Float,
+    maxSizeX: Int = 0,
+    maxSizeY: Int = 0,
+): Intent = Intent(context, BackgroundCropActivity::class.java).apply {
+    // Photo Picker URIs grant read access only via data or clipData, not custom Intent extras.
+    clipData = ClipData.newRawUri("crop_input", sourceUri)
+    putExtra(UCrop.EXTRA_INPUT_URI, sourceUri)
+    putExtra(UCrop.EXTRA_OUTPUT_URI, outputUri)
+    putExtra(UCrop.EXTRA_ASPECT_RATIO_X, aspectRatioX)
+    putExtra(UCrop.EXTRA_ASPECT_RATIO_Y, aspectRatioY)
+    if (maxSizeX > 0) putExtra(UCrop.EXTRA_MAX_SIZE_X, maxSizeX)
+    if (maxSizeY > 0) putExtra(UCrop.EXTRA_MAX_SIZE_Y, maxSizeY)
+    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
 }
 
 fun android.content.Context.backgroundCropSize(): Pair<Int, Int> {

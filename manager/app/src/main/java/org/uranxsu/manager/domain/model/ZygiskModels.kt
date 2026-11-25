@@ -34,7 +34,7 @@ data class ZygiskImplInfo(
 data class ZygiskConfig(
     val anonymousMemory: Boolean = false,
     val customLinker: Boolean = false,
-    val pltEngine: String = "bytehook",
+    val pltEngine: String = "yukiplt",
 )
 
 data class ZygiskModuleProcess(

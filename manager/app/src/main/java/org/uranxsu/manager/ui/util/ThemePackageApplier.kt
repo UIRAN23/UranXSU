@@ -3,8 +3,7 @@ package org.uranxsu.manager.ui.util
 import android.content.Context
 import android.net.Uri
 import java.io.File
-import org.uranxsu.manager.ui.component.media.VideoCropTransform
-import org.uranxsu.manager.ui.component.media.isVideoFile
+import kotlin.math.roundToInt
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.BottomBarStyle
 import org.uranxsu.manager.ui.theme.CardConfig
@@ -77,8 +76,8 @@ object ThemePackageApplier {
             val hasBg = variantData?.hasBackground ?: data.hasBackground
             if (bgPath != null && File(bgPath).isFile) {
                 backgroundManager.clearBackgroundSourceImage(context)
-                backgroundManager.saveBackgroundVideoTransform(VideoCropTransform.Default)
                 backgroundManager.saveAndApplyCustomBackground(context, Uri.fromFile(File(bgPath)))
+                settingsViewModel.dispatch(SettingsUiAction.SaveCardConfig)
                 settingsViewModel.dispatch(SettingsUiAction.Initialize)
             } else if (hasBg == false) {
                 settingsViewModel.dispatch(SettingsUiAction.RemoveCustomBackground)
@@ -90,7 +89,6 @@ object ThemePackageApplier {
             val hasCardBg = variantData?.hasCardBackground ?: data.hasCardBackground
             if (cardBgPath != null && File(cardBgPath).isFile) {
                 homeCustomization.clearStatusCardSourceImage(context)
-                homeCustomization.updateStatusCardVideoTransform(VideoCropTransform.Default)
                 homeCustomization.saveStatusCardImageFile(context, File(cardBgPath))
             } else if (hasCardBg == false) {
                 homeCustomization.clearStatusCardImage(context)
@@ -130,6 +128,10 @@ object ThemePackageApplier {
             (variantData?.hideHomeCardDecoration ?: data.hideHomeCardDecoration)?.let { hide ->
                 homeCustomization.updateHideStatusCardDecoration(hide)
             }
+            (variantData?.homeStatusScale ?: data.homeStatusScale)?.let { scale ->
+                val heightDp = (88f * scale.coerceIn(0.5f, 3.6f)).roundToInt().coerceIn(80, 320)
+                homeCustomization.updateStatusCardHeight(heightDp)
+            }
         }
 
         if (options.applyCustomTexts) {
@@ -161,10 +163,10 @@ object ThemePackageApplier {
         val resolvedBgFile = themeConfig.customBackgroundUri?.path?.let(::File)?.takeIf { it.isFile }
             ?: context.applicationContext.filesDir.listFiles()
                 ?.firstOrNull { it.isFile && it.name.startsWith("custom_background") && !it.name.endsWith(".tmp") }
-        val bgFile = resolvedBgFile?.takeIf { cardConfig.isCustomBackgroundEnabled && !isVideoFile(it) }
+        val bgFile = resolvedBgFile?.takeIf { cardConfig.isCustomBackgroundEnabled }
         val cardBgFile = homeCustomization.statusCardImagePath
             ?.let(::File)
-            ?.takeIf { it.isFile && !isVideoFile(it) }
+            ?.takeIf { it.isFile }
         val texts = customTextConfig.customTexts
         val data = ThemePackageData(
             version = ThemePackageStorage.BASE_VERSION,
@@ -178,6 +180,7 @@ object ThemePackageApplier {
             hasCardBackground = cardBgFile != null,
             hideHomeCardStatusText = homeCustomization.hideStatusCardText,
             hideHomeCardDecoration = homeCustomization.hideStatusCardDecoration,
+            homeStatusScale = (homeCustomization.statusCardHeight / 88f).coerceIn(0.5f, 3.6f),
             enableFloatingBottomBar = themeConfig.bottomBarStyle == BottomBarStyle.FLOATING,
             enableNavigationBadge = showNavigationBarBadge,
             enableSwipeDismiss = enableSwipeDismiss,

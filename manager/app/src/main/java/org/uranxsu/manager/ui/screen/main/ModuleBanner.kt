@@ -37,13 +37,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.koin.compose.koinInject
-import org.uranxsu.manager.data.AppSettingsRepository
 import org.uranxsu.manager.data.shell.KsuCliRepository
 import org.uranxsu.manager.domain.model.InstalledModule
-import org.uranxsu.manager.ui.component.media.VideoCropTransform
-import org.uranxsu.manager.ui.component.media.isVideoPath
-import org.uranxsu.manager.ui.component.media.isVideoUri
-import org.uranxsu.manager.ui.component.media.resolveVideoExtension
 
 private const val TAG = "ModuleBanner"
 private const val MODULE_DIR = "/data/adb/modules/"
@@ -59,42 +54,9 @@ private val MODULE_ROOTS = listOf("/data/adb/modules", "/data/adb/modules_update
 private val bannerCache = LruCache<String, ImageBitmap>(32)
 private val bannerRevision = mutableIntStateOf(0)
 
-fun moduleBannerRevision(): Int = bannerRevision.intValue
-
 fun invalidateModuleBanner(moduleId: String) {
     Log.d(TAG, "invalidate banner cache for $moduleId")
     bannerCache.evictAll()
-    bannerRevision.intValue++
-}
-
-fun getModuleBannerVideoTransform(
-    settings: AppSettingsRepository,
-    moduleId: String,
-): VideoCropTransform = VideoCropTransform(
-    scale = settings.getFloat("module_banner_video_scale_$moduleId", 1f),
-    offsetX = settings.getFloat("module_banner_video_offset_x_$moduleId", 0f),
-    offsetY = settings.getFloat("module_banner_video_offset_y_$moduleId", 0f),
-).sanitized()
-
-fun saveModuleBannerVideoTransform(
-    settings: AppSettingsRepository,
-    moduleId: String,
-    transform: VideoCropTransform,
-) {
-    val sanitized = transform.sanitized()
-    settings.putFloat("module_banner_video_scale_$moduleId", sanitized.scale)
-    settings.putFloat("module_banner_video_offset_x_$moduleId", sanitized.offsetX)
-    settings.putFloat("module_banner_video_offset_y_$moduleId", sanitized.offsetY)
-    bannerRevision.intValue++
-}
-
-fun clearModuleBannerVideoTransform(
-    settings: AppSettingsRepository,
-    moduleId: String,
-) {
-    settings.remove("module_banner_video_scale_$moduleId")
-    settings.remove("module_banner_video_offset_x_$moduleId")
-    settings.remove("module_banner_video_offset_y_$moduleId")
     bannerRevision.intValue++
 }
 
@@ -150,7 +112,7 @@ private fun loadModuleBanner(
 
 @Composable
 fun rememberModuleBanner(moduleId: String, banner: String?, enabled: Boolean = true): ImageBitmap? {
-    if (!enabled || banner.isNullOrBlank() || isVideoPath(banner)) return null
+    if (!enabled || banner.isNullOrBlank()) return null
     val ksuCli = koinInject<KsuCliRepository>()
     val okHttpClient = koinInject<OkHttpClient>()
     val key = "$moduleId:$banner"
@@ -163,54 +125,6 @@ fun rememberModuleBanner(moduleId: String, banner: String?, enabled: Boolean = t
         }
     }
     return bitmap
-}
-
-@Composable
-fun rememberModuleBannerVideo(moduleId: String, banner: String?, enabled: Boolean = true): File? {
-    if (!enabled || banner.isNullOrBlank() || !isVideoPath(banner)) return null
-    val context = LocalContext.current
-    val ksuCli = koinInject<KsuCliRepository>()
-    val revision = bannerRevision.intValue
-    val file by produceState<File?>(null, moduleId, banner, revision) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                val shell = ksuCli.getRootShell()
-                val srcFile = SuFile("/data/adb/modules/$moduleId/$banner").apply { this.shell = shell }
-                val updateSrcFile = SuFile("/data/adb/modules_update/$moduleId/$banner").apply { this.shell = shell }
-                val chosen = when {
-                    srcFile.isFile -> srcFile
-                    updateSrcFile.isFile -> updateSrcFile
-                    else -> null
-                } ?: return@runCatching null
-
-                val bannerName = banner.substringAfterLast('/')
-                val cachePrefix = "banner_${moduleId}_"
-                val targetFile = File(
-                    context.cacheDir,
-                    "${cachePrefix}${chosen.length()}_${chosen.lastModified()}_$bannerName",
-                )
-                if (!targetFile.isFile || targetFile.length() != chosen.length()) {
-                    val tmpFile = File(context.cacheDir, "${targetFile.name}.tmp")
-                    SuFileInputStream.open(chosen).use { input ->
-                        tmpFile.outputStream().use { output ->
-                            input.copyTo(output)
-                        }
-                    }
-                    if (!tmpFile.renameTo(targetFile)) {
-                        tmpFile.copyTo(targetFile, overwrite = true)
-                        tmpFile.delete()
-                    }
-                    context.cacheDir.listFiles()?.forEach { cached ->
-                        if (cached.name.startsWith(cachePrefix) && cached.name != targetFile.name) {
-                            runCatching { cached.delete() }
-                        }
-                    }
-                }
-                targetFile
-            }.getOrNull()
-        }
-    }
-    return file
 }
 
 fun Modifier.moduleBanner(banner: ImageBitmap?, scrim: Color): Modifier {
@@ -279,42 +193,8 @@ object ModuleBannerEditor {
         module: InstalledModule,
         uri: Uri,
     ): Result<Unit> = runCatching {
-        val declaredSize = runCatching {
-            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
-        }.getOrNull() ?: -1L
-        require(declaredSize <= MAX_SOURCE_BYTES) { "Media is too large" }
-
-        val isVideo = isVideoUri(context, uri)
-        val dirs = moduleDirectories(shell, module.dirId)
-        require(dirs.isNotEmpty()) { "Module directory not found" }
-
-        if (isVideo) {
-            val ext = resolveVideoExtension(context, uri)
-            val fileName = "$CUSTOM_BANNER_PREFIX.$ext"
-            val buffer = ByteArray(64 * 1024)
-            dirs.forEach { dir ->
-                backupOriginalBanner(shell, dir, readText(shell, "$dir/module.prop"))
-                removeCustomBannerFiles(shell, dir, keep = fileName)
-                var copiedBytes = 0L
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    SuFileOutputStream.open(suFile(shell, "$dir/$fileName"), false).use { output ->
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read <= 0) break
-                            copiedBytes += read
-                            require(copiedBytes <= MAX_SOURCE_BYTES) { "Media is too large" }
-                            output.write(buffer, 0, read)
-                        }
-                    }
-                } ?: error("Unable to read selected media")
-                require(copiedBytes > 0L) { "Media is empty" }
-                check(setBannerValue(shell, dir, fileName)) { "Failed to update module.prop" }
-            }
-            return@runCatching
-        }
-
         val raw = readBoundedBytes(context, uri, MAX_SOURCE_BYTES)
-        require(raw.isNotEmpty()) { "Media is empty" }
+        require(raw.isNotEmpty()) { "Image is empty" }
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
@@ -322,6 +202,8 @@ object ModuleBannerEditor {
 
         val normalized = normalizeBanner(raw, bounds)
         val fileName = "$CUSTOM_BANNER_PREFIX.${normalized.extension}"
+        val dirs = moduleDirectories(shell, module.dirId)
+        require(dirs.isNotEmpty()) { "Module directory not found" }
         dirs.forEach { dir ->
             backupOriginalBanner(shell, dir, readText(shell, "$dir/module.prop"))
             removeCustomBannerFiles(shell, dir, keep = fileName)

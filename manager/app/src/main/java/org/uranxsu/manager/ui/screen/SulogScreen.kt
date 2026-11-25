@@ -86,8 +86,10 @@ import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.theme.CardConfig
 import org.uranxsu.manager.ui.theme.blurSource
 import org.uranxsu.manager.ui.util.ActivityResumeEffect
+import org.uranxsu.manager.ui.util.CustomTextKey
 import org.uranxsu.manager.ui.util.LocalBlurState
 import org.uranxsu.manager.ui.util.adaptiveScaffoldWindowInsets
+import org.uranxsu.manager.ui.util.customText
 import org.uranxsu.manager.ui.viewmodel.SulogActions
 import org.uranxsu.manager.ui.viewmodel.SulogFileSelector
 import org.uranxsu.manager.ui.viewmodel.SulogScreenState
@@ -173,7 +175,7 @@ private fun SulogScreenContent(
     Scaffold(
         topBar = {
             SearchAppBar(
-                title = stringResource(R.string.settings_sulog),
+                title = customText(CustomTextKey.PAGE_LOG),
                 searchText = localSearchText,
                 onSearchTextChange = {
                     actions.onSearchTextChange(it)

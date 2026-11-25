@@ -14,7 +14,6 @@ import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.uranxsu.manager.data.AppSettingsRepository
-import org.uranxsu.manager.ui.component.media.VideoCropTransform
 
 @Stable
 class HomeCustomizationConfig(
@@ -23,8 +22,6 @@ class HomeCustomizationConfig(
     var statusCardImagePath by mutableStateOf<String?>(null)
         private set
     var statusCardImageVersion by mutableIntStateOf(0)
-        private set
-    var statusCardVideoTransform by mutableStateOf(VideoCropTransform.Default)
         private set
     var statusCardScrim by mutableFloatStateOf(DEFAULT_CARD_SCRIM)
         private set
@@ -44,11 +41,6 @@ class HomeCustomizationConfig(
     fun load() {
         val path = settings.getString(KEY_STATUS_CARD_IMAGE, null)
         statusCardImagePath = path?.takeIf { File(it).isFile }
-        statusCardVideoTransform = VideoCropTransform(
-            scale = settings.getFloat(KEY_STATUS_CARD_VIDEO_SCALE, 1f),
-            offsetX = settings.getFloat(KEY_STATUS_CARD_VIDEO_OFFSET_X, 0f),
-            offsetY = settings.getFloat(KEY_STATUS_CARD_VIDEO_OFFSET_Y, 0f),
-        ).sanitized()
         statusCardScrim = settings.getFloat(KEY_STATUS_CARD_SCRIM, DEFAULT_CARD_SCRIM).coerceIn(0f, 0.85f)
         statusCardHeight = settings.getInt(KEY_STATUS_CARD_HEIGHT, DEFAULT_STATUS_CARD_HEIGHT).coerceIn(80, 360)
         hideStatusCardText = settings.getBoolean(KEY_HIDE_STATUS_CARD_TEXT, false)
@@ -94,18 +86,8 @@ class HomeCustomizationConfig(
 
     suspend fun saveStatusCardImage(context: Context, uri: Uri): Boolean = withContext(Dispatchers.IO) {
         runCatching {
-            val isVideo = org.uranxsu.manager.ui.component.media.isVideoUri(context, uri)
-            if (isVideo) {
-                clearStatusCardSourceImage(context)
-            }
-            val ext = if (isVideo) {
-                org.uranxsu.manager.ui.component.media.resolveVideoExtension(context, uri)
-            } else {
-                "jpg"
-            }
-
             val filesDir = context.applicationContext.filesDir
-            val fileName = "home_status_card_bg_${System.currentTimeMillis()}.$ext"
+            val fileName = "home_status_card_bg_${System.currentTimeMillis()}.jpg"
             val tmpDest = File(filesDir, "$fileName.tmp")
             val dest = File(filesDir, fileName)
             context.contentResolver.openInputStream(uri)?.use { input ->
@@ -113,14 +95,14 @@ class HomeCustomizationConfig(
                     input.copyTo(output)
                     output.flush()
                 }
-            } ?: error("Cannot open selected media")
-            check(tmpDest.isFile && tmpDest.length() > 0L) { "Copied card media is empty" }
+            } ?: error("Cannot open selected image")
+            check(tmpDest.isFile && tmpDest.length() > 0L) { "Copied card image is empty" }
             if (!tmpDest.renameTo(dest)) {
                 tmpDest.copyTo(dest, overwrite = true)
                 tmpDest.delete()
             }
 
-            // Clean up older status card media files only after the new file is safely stored.
+            // Clean up older status card files only after the new file is safely stored.
             filesDir.listFiles()?.forEach { file ->
                 if (file.name.startsWith("home_status_card_bg") && file.name != dest.name) {
                     runCatching { file.delete() }
@@ -132,7 +114,7 @@ class HomeCustomizationConfig(
             statusCardImageVersion++
             true
         }.onFailure {
-            Log.e(TAG, "Failed to save status card media", it)
+            Log.e(TAG, "Failed to save status card image", it)
         }.getOrDefault(false)
     }
 
@@ -143,7 +125,7 @@ class HomeCustomizationConfig(
             val filesDir = context.applicationContext.filesDir
             val dest = File(filesDir, "home_status_card_bg_${System.currentTimeMillis()}.$ext")
             sourceFile.copyTo(dest, overwrite = true)
-            check(dest.isFile && dest.length() > 0L) { "Copied card media is empty" }
+            check(dest.isFile && dest.length() > 0L) { "Copied card image is empty" }
             filesDir.listFiles()?.forEach { file ->
                 if (file.name.startsWith("home_status_card_bg") && file.name != dest.name) {
                     runCatching { file.delete() }
@@ -154,7 +136,7 @@ class HomeCustomizationConfig(
             statusCardImageVersion++
             true
         }.onFailure {
-            Log.e(TAG, "Failed to copy status card media", it)
+            Log.e(TAG, "Failed to copy status card image", it)
         }.getOrDefault(false)
     }
 
@@ -167,21 +149,9 @@ class HomeCustomizationConfig(
             }
         }
         clearStatusCardSourceImage(context)
-        updateStatusCardVideoTransform(VideoCropTransform.Default)
         settings.remove(KEY_STATUS_CARD_IMAGE)
-        settings.remove(KEY_STATUS_CARD_VIDEO_SCALE)
-        settings.remove(KEY_STATUS_CARD_VIDEO_OFFSET_X)
-        settings.remove(KEY_STATUS_CARD_VIDEO_OFFSET_Y)
         statusCardImagePath = null
         statusCardImageVersion++
-    }
-
-    fun updateStatusCardVideoTransform(transform: VideoCropTransform) {
-        val sanitized = transform.sanitized()
-        statusCardVideoTransform = sanitized
-        settings.putFloat(KEY_STATUS_CARD_VIDEO_SCALE, sanitized.scale)
-        settings.putFloat(KEY_STATUS_CARD_VIDEO_OFFSET_X, sanitized.offsetX)
-        settings.putFloat(KEY_STATUS_CARD_VIDEO_OFFSET_Y, sanitized.offsetY)
     }
 
     fun updateStatusCardHeight(height: Int) {
@@ -227,9 +197,6 @@ class HomeCustomizationConfig(
         const val DEFAULT_CARD_SCRIM = 0.35f
         const val DEFAULT_STATUS_CARD_HEIGHT = 112
         const val KEY_STATUS_CARD_IMAGE = "home_status_card_image_path"
-        const val KEY_STATUS_CARD_VIDEO_SCALE = "home_status_card_video_scale"
-        const val KEY_STATUS_CARD_VIDEO_OFFSET_X = "home_status_card_video_offset_x"
-        const val KEY_STATUS_CARD_VIDEO_OFFSET_Y = "home_status_card_video_offset_y"
         const val KEY_STATUS_CARD_SCRIM = "home_status_card_scrim"
         const val KEY_STATUS_CARD_HEIGHT = "home_status_card_height"
         const val KEY_HIDE_STATUS_CARD_TEXT = "hide_home_card_status_text"

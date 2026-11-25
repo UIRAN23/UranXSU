@@ -213,7 +213,7 @@
     <string name="backup_allowlist">Backup Allowlist</string>
     <string name="restore_allowlist">Restore Allowlist</string>
     <string name="settings_custom_background">Custom App Background</string>
-    <string name="settings_custom_background_summary">Select an image with cropping or a looping video as background</string>
+    <string name="settings_custom_background_summary">Select an image to crop as your custom background</string>
     <string name="background_crop_method_title">Select crop method</string>
     <string name="background_crop_method_in_app">In-app crop</string>
     <string name="background_crop_method_external">External crop</string>
@@ -836,10 +836,10 @@
     <string name="app_icon_default">Default (UranXSU)</string>
     <string name="app_icon_miku">Miku Nakano</string>
     <string name="home_customization_section">Home screen &amp; modules</string>
-    <string name="home_card_image">Status card image / video</string>
-    <string name="home_card_image_summary">Pick an image, cropped photo, or looping video for the home status card</string>
-    <string name="home_card_image_remove">Remove card media</string>
-    <string name="home_card_image_dim">Card media dimming</string>
+    <string name="home_card_image">Status card image</string>
+    <string name="home_card_image_summary">Pick and crop an image for the home status card</string>
+    <string name="home_card_image_remove">Remove card image</string>
+    <string name="home_card_image_dim">Card image dimming</string>
     <string name="home_status_card_height">Status card height</string>
     <string name="home_status_card_height_summary">Enlarge or shrink the home screen status card (%1$d dp)</string>
     <string name="home_hide_status_text">Hide status card text</string>
@@ -881,11 +881,9 @@
     <string name="custom_banner_crop_title">Crop Module Banner</string>
     <string name="local_network_permission_description">Local network permission is needed to check module updates from local network hosts.</string>
     <string name="wallpaper_section">Wallpaper &amp; visual effects</string>
-    <string name="settings_custom_background_change">Change wallpaper / video</string>
+    <string name="settings_custom_background_change">Change wallpaper</string>
     <string name="media_type_photo">Active: Photo</string>
-    <string name="media_type_video">Active: Video</string>
     <string name="home_card_media_photo_active">Active: Cropped photo (tap to replace)</string>
-    <string name="home_card_media_video_active">Active: Looping video (tap to replace)</string>
     <string name="gestures_animations_section">Gestures &amp; animations</string>
     <string name="theme_import_dialog_title">Import theme (.sukisu)</string>
     <string name="theme_import_select_all">Select all</string>
@@ -904,10 +902,5 @@
     <string name="crop_use_original">Original</string>
     <string name="crop_adjust_title">Adjust crop</string>
     <string name="crop_adjust_photo_summary">Re-crop or change aspect ratio of current photo</string>
-    <string name="crop_adjust_video_summary">Adjust zoom and position of looping video</string>
-    <string name="video_crop_title">Frame video</string>
-    <string name="video_crop_hint">Pinch to zoom and drag to position the video frame</string>
-    <string name="video_crop_zoom">Zoom</string>
-    <string name="video_crop_load_failed">Could not preview video; framing settings will still be saved</string>
     <string name="module_banner_crop">Adjust crop</string>
 </resources>

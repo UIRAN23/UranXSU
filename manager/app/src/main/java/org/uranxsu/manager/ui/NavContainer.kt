@@ -29,7 +29,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.paint
 import androidx.compose.ui.geometry.Offset
@@ -346,7 +345,6 @@ fun NavContainer(
         }
         val interceptPredictiveBack =
             settings.predictiveBackAnimation == PredictiveBackAnimation.None && backStack.size > 1
-        val currentRoute = backStack.lastOrNull()
 
         NavDisplay(
             backStack = backStack,
@@ -361,7 +359,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     AboutScreen()
                 }
@@ -373,7 +370,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     OpenSourceLicenseScreen()
                 }
@@ -385,7 +381,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     SulogScreen()
                 }
@@ -397,7 +392,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
@@ -409,7 +403,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     AppProfileTemplateScreen()
                 }
@@ -421,7 +414,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     TemplateEditorScreen(
                         templateId = key.templateId,
@@ -437,7 +429,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     AppProfileScreen(key.uid, key.packageName)
                 }
@@ -449,7 +440,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     ModuleRepoScreen()
                 }
@@ -461,7 +451,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     OnlineModuleDetailScreen(key.moduleId, key.repositoryUrl)
                 }
@@ -473,7 +462,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) { ModuleRepoScreen(key.repositoryUrl) }
             }
             entry<Route.AddRepository>(swipeDismiss = swipeBackDirection) { key ->
@@ -483,7 +471,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) { AddRepositoryScreen() }
             }
             entry<Route.Install>(swipeDismiss = NavSwipeDirection.None) { key ->
@@ -493,7 +480,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     InstallScreen(key.preselectedKernelUri)
                 }
@@ -505,7 +491,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     FlashScreen(key.toFlashIt())
                 }
@@ -517,7 +502,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     ScriptRunScreen(key)
                 }
@@ -529,7 +513,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     ExecuteModuleActionScreen(key.moduleId, key.fromShortcut)
                 }
@@ -541,7 +524,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
@@ -553,7 +535,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
@@ -565,7 +546,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
@@ -577,7 +557,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     MainScreen(pagerInterceptionMode = settings.pagerInterceptionMode)
                 }
@@ -589,7 +568,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     ThemeSettingsScreen(settingsViewModel = settingsViewModel)
                 }
@@ -601,7 +579,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     CustomTextScreen()
                 }
@@ -613,7 +590,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     SuSFSConfigScreen()
                 }
@@ -625,7 +601,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     MountSettingsScreen()
                 }
@@ -637,7 +612,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     NoMountManagerScreen()
                 }
@@ -649,7 +623,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     BuiltinZygiskScreen()
                 }
@@ -661,7 +634,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     UmountManagerScreen()
                 }
@@ -673,7 +645,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     DynamicManagerScreen()
                 }
@@ -685,7 +656,6 @@ fun NavContainer(
                     themeConfig = themeConfig,
                     backgroundRenderState = backgroundRenderState,
                     useBlur = useBlur,
-                    isTopEntry = currentRoute == key,
                 ) {
                     KernelFlashScreen(key.kernelUri, key.selectedSlot, key.skipKsud)
                 }
@@ -701,10 +671,8 @@ private fun ManagerNavEntry(
     themeConfig: ThemeConfig,
     backgroundRenderState: BackgroundRenderState,
     useBlur: Boolean,
-    isTopEntry: Boolean,
     content: @Composable () -> Unit,
 ) {
-    val context = LocalContext.current
     val transitionRunning = LocalNavTransitionScope.current.isRunning
     val navigationEventState = rememberNavigationEventState(NavigationEventInfo.None)
     NavigationBackHandler(
@@ -723,11 +691,6 @@ private fun ManagerNavEntry(
         }
     }
 
-    val customBgUri = themeConfig.customBackgroundUri
-    val isVideoBg = remember(context, customBgUri) {
-        customBgUri != null && org.uranxsu.manager.ui.component.media.isVideoUri(context, customBgUri)
-    }
-
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -743,7 +706,7 @@ private fun ManagerNavEntry(
                 }
             }
             .then(
-                if (backgroundRenderState.imagePainter == null && !isVideoBg) {
+                if (backgroundRenderState.imagePainter == null) {
                     Modifier.background(MaterialTheme.colorScheme.surfaceContainer)
                 } else {
                     Modifier
@@ -761,49 +724,26 @@ private fun ManagerNavEntry(
             LocalSnackbarHost provides snackBarHostState,
             LocalBackgroundBlurAnchor provides backgroundBlurAnchorCoordinates,
         ) {
-            if (isVideoBg && customBgUri != null) {
-                val frameBitmap = backgroundRenderState.imageBitmap
-                val videoTransform = themeConfig.backgroundVideoTransform.sanitized()
+            backgroundRenderState.imagePainter?.let { painter ->
+                val backgroundBitmap = backgroundRenderState.imageBitmap
+                // Draw the decoded bitmap once available so the background does
+                // not depend on the async painter's crossfade invalidations.
+                val backgroundPainter = remember(backgroundBitmap, painter) {
+                    backgroundBitmap?.let { BitmapPainter(it) } ?: painter
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .clipToBounds()
-                        .background(surfaceContainer)
                         .onGloballyPositioned { coordinates ->
                             backgroundBlurAnchorCoordinates = coordinates.takeIf {
                                 it.isAttached
                             }
                         }
+                        .paint(
+                            painter = backgroundPainter,
+                            contentScale = ContentScale.Crop,
+                        )
                         .drawWithContent {
-                            if (
-                                frameBitmap != null &&
-                                frameBitmap.width > 0 &&
-                                frameBitmap.height > 0 &&
-                                size.width > 0f &&
-                                size.height > 0f
-                            ) {
-                                val bw = frameBitmap.width.toFloat()
-                                val bh = frameBitmap.height.toFloat()
-                                val baseScale = maxOf(size.width / bw, size.height / bh)
-                                val finalScale = baseScale * videoTransform.scale
-                                val (maxDx, maxDy) =
-                                    org.uranxsu.manager.ui.component.media.computeVideoOverflow(
-                                        viewWidth = size.width,
-                                        viewHeight = size.height,
-                                        mediaWidth = bw,
-                                        mediaHeight = bh,
-                                        scale = videoTransform.scale,
-                                    )
-                                val left =
-                                    (size.width - bw * finalScale) / 2f + videoTransform.offsetX * maxDx
-                                val top =
-                                    (size.height - bh * finalScale) / 2f + videoTransform.offsetY * maxDy
-                                translate(left = left, top = top) {
-                                    scale(scaleX = finalScale, scaleY = finalScale, pivot = Offset.Zero) {
-                                        drawImage(image = frameBitmap, filterQuality = FilterQuality.Low)
-                                    }
-                                }
-                            }
                             drawContent()
                             drawRect(
                                 color = surfaceContainer.copy(
@@ -811,47 +751,7 @@ private fun ManagerNavEntry(
                                 ),
                             )
                         },
-                ) {
-                    if (isTopEntry) {
-                        org.uranxsu.manager.ui.component.media.LoopingVideoBackground(
-                            videoUri = customBgUri,
-                            modifier = Modifier.fillMaxSize(),
-                            isMuted = true,
-                            isActive = true,
-                            transform = videoTransform,
-                        )
-                    }
-                }
-            } else {
-                backgroundRenderState.imagePainter?.let { painter ->
-                    val backgroundBitmap = backgroundRenderState.imageBitmap
-                    // Draw the decoded bitmap once available so the background does
-                    // not depend on the async painter's crossfade invalidations.
-                    val backgroundPainter = remember(backgroundBitmap, painter) {
-                        backgroundBitmap?.let { BitmapPainter(it) } ?: painter
-                    }
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .onGloballyPositioned { coordinates ->
-                                backgroundBlurAnchorCoordinates = coordinates.takeIf {
-                                    it.isAttached
-                                }
-                            }
-                            .paint(
-                                painter = backgroundPainter,
-                                contentScale = ContentScale.Crop,
-                            )
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    color = surfaceContainer.copy(
-                                        alpha = themeConfig.backgroundDim,
-                                    ),
-                                )
-                            },
-                    )
-                }
+                )
             }
             Box(
                 modifier = Modifier

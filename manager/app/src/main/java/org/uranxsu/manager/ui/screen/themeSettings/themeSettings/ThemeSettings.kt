@@ -88,12 +88,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.materialkolor.PaletteStyle
 import com.materialkolor.dynamiccolor.ColorSpec
 import com.yalantis.ucrop.UCrop
-import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -104,8 +102,6 @@ import org.uranxsu.manager.R
 import org.uranxsu.manager.domain.model.availablePaletteStyles
 import org.uranxsu.manager.ui.component.ConfirmResult
 import org.uranxsu.manager.ui.component.KeyPointSlider
-import org.uranxsu.manager.ui.component.media.VideoCropTransform
-import org.uranxsu.manager.ui.component.media.isVideoUri
 import org.uranxsu.manager.ui.component.rememberConfirmDialog
 import org.uranxsu.manager.ui.component.settings.AppBackButton
 import org.uranxsu.manager.ui.component.settings.SegmentedColumn
@@ -121,9 +117,7 @@ import org.uranxsu.manager.ui.screen.themeSettings.component.ThemeSettingsDialog
 import org.uranxsu.manager.ui.screen.themeSettings.crop.backgroundCropSize
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
-import org.uranxsu.manager.ui.screen.themeSettings.crop.createInternalCropOutputUri
-import org.uranxsu.manager.ui.screen.themeSettings.crop.createVideoCropIntent
-import org.uranxsu.manager.ui.screen.themeSettings.crop.parseVideoCropResult
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createFileProviderUri
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.BottomBarStyle
 import org.uranxsu.manager.ui.theme.CardConfig
@@ -176,18 +170,15 @@ fun ThemeSettingsScreen(
     var pendingPickedPhotoSourceUri by remember { mutableStateOf<Uri?>(null) }
     var activeCropSourceUri by remember { mutableStateOf<Uri?>(null) }
     var pendingExternalCropOutputUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingVideoCropIsReframe by remember { mutableStateOf(false) }
     var showCropMethodDialog by remember { mutableStateOf(false) }
 
     val externalCropUnavailable = stringResource(R.string.background_external_crop_unavailable)
     val backgroundCropFailed = stringResource(R.string.background_crop_failed)
     val backgroundCropTitle = stringResource(R.string.background_crop_title)
-    val videoCropTitle = stringResource(R.string.video_crop_title)
 
     fun commitCroppedPhoto(outputUri: Uri) {
         val originalSource = activeCropSourceUri
         activeCropSourceUri = null
-        backgroundManager.saveBackgroundVideoTransform(VideoCropTransform.Default)
         coroutineScope.launch {
             if (originalSource != null) {
                 backgroundManager.saveBackgroundSourceImage(context, originalSource)
@@ -233,25 +224,8 @@ fun ThemeSettingsScreen(
         pendingExternalCropOutputUri = null
     }
 
-    val videoCropLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val isReframe = pendingVideoCropIsReframe
-        pendingVideoCropIsReframe = false
-        if (result.resultCode == Activity.RESULT_OK) {
-            parseVideoCropResult(result.data)?.let { (uri, transform) ->
-                backgroundManager.saveBackgroundVideoTransform(transform)
-                if (!isReframe && uri != null) {
-                    settingsViewModel.dispatch(
-                        SettingsUiAction.SetCustomBackground(uri.toString()),
-                    )
-                }
-            }
-        }
-    }
-
     val launchInAppCrop = { sourceUri: Uri ->
-        val outputUri = createInternalCropOutputUri(context, "background_crop_ucrop")
+        val outputUri = createBackgroundCropOutputUri(context, "background_crop_ucrop")
         val (screenWidth, screenHeight) = context.backgroundCropSize()
         val intent = createBackgroundCropIntent(
             context = context,
@@ -274,7 +248,7 @@ fun ThemeSettingsScreen(
                 context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                     inputStream.copyTo(outputStream)
                 } ?: error("Failed to open external crop output")
-            } ?: error("Failed to open selected media")
+            } ?: error("Failed to open selected image")
         }.isSuccess
 
         if (!copied) {
@@ -316,54 +290,20 @@ fun ThemeSettingsScreen(
         ActivityResultContracts.PickVisualMedia(),
     ) { uri: Uri? ->
         uri?.let {
-            if (isVideoUri(context, it)) {
-                pendingVideoCropIsReframe = false
-                val (screenWidth, screenHeight) = context.backgroundCropSize()
-                videoCropLauncher.launch(
-                    createVideoCropIntent(
-                        context = context,
-                        videoUri = it,
-                        aspectRatioX = screenWidth.toFloat(),
-                        aspectRatioY = screenHeight.toFloat(),
-                        cornerRadiusDp = 24f,
-                        title = videoCropTitle,
-                        initialTransform = VideoCropTransform.Default,
-                    ),
-                )
-            } else {
-                pendingPickedPhotoSourceUri = it
-                pendingBackgroundImageUri = it
-                showCropMethodDialog = true
-            }
+            pendingPickedPhotoSourceUri = it
+            pendingBackgroundImageUri = it
+            showCropMethodDialog = true
         }
     }
 
     val launchRecrop = {
-        val activeUri = themeConfig.customBackgroundUri
-        val isVideo = activeUri != null && isVideoUri(context, activeUri)
-        if (isVideo && activeUri != null) {
-            pendingVideoCropIsReframe = true
-            val (screenWidth, screenHeight) = context.backgroundCropSize()
-            videoCropLauncher.launch(
-                createVideoCropIntent(
-                    context = context,
-                    videoUri = activeUri,
-                    aspectRatioX = screenWidth.toFloat(),
-                    aspectRatioY = screenHeight.toFloat(),
-                    cornerRadiusDp = 24f,
-                    title = videoCropTitle,
-                    initialTransform = themeConfig.backgroundVideoTransform,
-                ),
-            )
+        val sourceFile = backgroundManager.getBackgroundSourceFile(context)
+        if (sourceFile != null) {
+            pendingPickedPhotoSourceUri = null
+            pendingBackgroundImageUri = createFileProviderUri(context, sourceFile)
+            showCropMethodDialog = true
         } else {
-            val sourceFile = backgroundManager.getBackgroundSourceFile(context)
-            if (sourceFile != null) {
-                pendingPickedPhotoSourceUri = null
-                pendingBackgroundImageUri = Uri.fromFile(sourceFile)
-                showCropMethodDialog = true
-            } else {
-                Toast.makeText(context, backgroundCropFailed, Toast.LENGTH_SHORT).show()
-            }
+            Toast.makeText(context, backgroundCropFailed, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -473,7 +413,7 @@ fun ThemeSettingsScreen(
                 )
             }
 
-            item { HomeCustomizationSettings() }
+            item { HomeCustomizationSettings(homeUiState = homeUiState) }
 
             item {
                 // Interface & Navigation
@@ -746,18 +686,8 @@ private fun WallpaperEffectsSettings(
     onAdjustCrop: () -> Unit,
     coroutineScope: CoroutineScope,
 ) {
-    val context = LocalContext.current
     val themeConfig: ThemeConfig = koinInject()
     val backgroundManager: BackgroundManager = koinInject()
-    val activeBgUri = themeConfig.customBackgroundUri
-    val isVideoBg = remember(context, activeBgUri) {
-        activeBgUri != null && isVideoUri(context, activeBgUri)
-    }
-    val activeTypeLabel = if (isVideoBg) {
-        stringResource(R.string.media_type_video)
-    } else {
-        stringResource(R.string.media_type_photo)
-    }
 
     SegmentedColumn(title = stringResource(R.string.wallpaper_section)) {
         expandableItem(
@@ -774,10 +704,10 @@ private fun WallpaperEffectsSettings(
                     SettingsJumpPageWidget(
                         icon = Icons.TwoTone.Wallpaper,
                         title = stringResource(R.string.settings_custom_background_change),
-                        description = activeTypeLabel,
+                        description = stringResource(R.string.media_type_photo),
                         onClick = {
                             pickImageLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                             )
                         },
                     )
@@ -786,9 +716,7 @@ private fun WallpaperEffectsSettings(
                     SettingsJumpPageWidget(
                         icon = Icons.TwoTone.Crop,
                         title = stringResource(R.string.crop_adjust_title),
-                        description = stringResource(
-                            if (isVideoBg) R.string.crop_adjust_video_summary else R.string.crop_adjust_photo_summary,
-                        ),
+                        description = stringResource(R.string.crop_adjust_photo_summary),
                         onClick = { onAdjustCrop() },
                     )
                 }
@@ -1069,7 +997,7 @@ private fun CustomBackgroundSettings(
         onCheckedChange = { isChecked ->
             if (isChecked) {
                 pickImageLauncher.launch(
-                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                 )
             } else {
                 viewModel.dispatch(SettingsUiAction.RemoveCustomBackground)

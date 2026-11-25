@@ -136,7 +136,6 @@ import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.uranxsu.manager.R
-import org.uranxsu.manager.data.AppSettingsRepository
 import org.uranxsu.manager.data.settings.SettingsPlatformRepository
 import org.uranxsu.manager.data.shell.KsuCliRepository
 import org.uranxsu.manager.domain.model.DocumentFormat
@@ -159,10 +158,6 @@ import org.uranxsu.manager.ui.component.WarningCard
 import org.uranxsu.manager.ui.component.ZipFileDetector
 import org.uranxsu.manager.ui.component.ZipFileInfo
 import org.uranxsu.manager.ui.component.ZipType
-import org.uranxsu.manager.ui.component.media.LoopingVideoBackground
-import org.uranxsu.manager.ui.component.media.VideoCropTransform
-import org.uranxsu.manager.ui.component.media.isVideoFile
-import org.uranxsu.manager.ui.component.media.isVideoUri
 import org.uranxsu.manager.ui.component.rememberConfirmDialog
 import org.uranxsu.manager.ui.component.rememberLoadingDialog
 import org.uranxsu.manager.ui.component.rememberSearchAppBarScrollBehavior
@@ -176,10 +171,8 @@ import org.uranxsu.manager.ui.navigation.Route
 import org.uranxsu.manager.ui.screen.LabelText
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
-import org.uranxsu.manager.ui.screen.themeSettings.crop.createInternalCropOutputUri
-import org.uranxsu.manager.ui.screen.themeSettings.crop.createVideoCropIntent
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createFileProviderUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.getParcelableExtraCompat
-import org.uranxsu.manager.ui.screen.themeSettings.crop.parseVideoCropResult
 import org.uranxsu.manager.ui.theme.CardConfig
 import org.uranxsu.manager.ui.theme.HomeCustomizationConfig
 import org.uranxsu.manager.ui.theme.ThemeConfig
@@ -480,7 +473,7 @@ fun ModulePage(bottomPadding: Dp) {
                                 if (uiState.search.isNotEmpty()) {
                                     stringResource(R.string.search_no_any_match)
                                 } else {
-                                    stringResource(R.string.module_empty)
+                                    customText(CustomTextKey.MODULE_EMPTY)
                                 },
                             textAlign = TextAlign.Center,
                             style = MaterialTheme.typography.bodyLarge,
@@ -645,7 +638,7 @@ private fun ModuleList(
     val failedDisable = stringResource(R.string.module_failed_to_disable)
     val failedUninstall = stringResource(R.string.module_uninstall_failed)
     val successUninstall = stringResource(R.string.module_uninstall_success)
-    val reboot = stringResource(R.string.reboot)
+    val reboot = customText(CustomTextKey.COMMON_REBOOT)
     val rebootToApply = stringResource(R.string.reboot_to_apply)
     val moduleStr = stringResource(R.string.module)
     val uninstall = stringResource(R.string.uninstall)
@@ -729,7 +722,6 @@ private fun ModuleList(
     val loadingDialog = rememberLoadingDialog()
     val confirmDialog = rememberConfirmDialog()
     val ksuCli = koinInject<KsuCliRepository>()
-    val appSettings = koinInject<AppSettingsRepository>()
     val bannerSavedMsg = stringResource(R.string.module_banner_saved)
     val bannerResetMsg = stringResource(R.string.module_banner_reset_done)
     val bannerFailedMsg = stringResource(R.string.module_banner_failed)
@@ -741,11 +733,9 @@ private fun ModuleList(
     var pendingBannerPhotoModule by remember { mutableStateOf<InstalledModule?>(null) }
     var pendingBannerPhotoUri by remember { mutableStateOf<Uri?>(null) }
     var pendingBannerExternalCropUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingBannerVideoIsReframe by remember { mutableStateOf(false) }
     var showBannerCropMethodDialog by remember { mutableStateOf(false) }
 
     fun importCroppedBannerPhoto(target: InstalledModule, outputUri: Uri) {
-        clearModuleBannerVideoTransform(appSettings, target.dirId)
         scope.launch {
             val opResult = withContext(Dispatchers.IO) {
                 ModuleBannerEditor.import(context, ksuCli.getRootShell(), target, outputUri)
@@ -787,40 +777,9 @@ private fun ModuleList(
         }
     }
 
-    val videoCropModuleBannerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val target = bannerTargetModule
-        val isReframe = pendingBannerVideoIsReframe
-        bannerTargetModule = null
-        pendingBannerVideoIsReframe = false
-        if (result.resultCode == RESULT_OK && target != null) {
-            parseVideoCropResult(result.data)?.let { (videoUri, transform) ->
-                saveModuleBannerVideoTransform(appSettings, target.dirId, transform)
-                if (!isReframe && videoUri != null) {
-                    scope.launch {
-                        val opResult = withContext(Dispatchers.IO) {
-                            ModuleBannerEditor.import(context, ksuCli.getRootShell(), target, videoUri)
-                        }
-                        if (opResult.isSuccess) {
-                            invalidateModuleBanner(target.dirId)
-                            viewModel.dispatch(ModuleUiAction.Refresh(manual = true))
-                            snackBarHost.showReplacingSnackbar(bannerSavedMsg)
-                        } else {
-                            snackBarHost.showReplacingSnackbar(bannerFailedMsg)
-                        }
-                    }
-                } else {
-                    invalidateModuleBanner(target.dirId)
-                    scope.launch { snackBarHost.showReplacingSnackbar(bannerSavedMsg) }
-                }
-            }
-        }
-    }
-
     val launchModuleBannerInAppCrop = { target: InstalledModule, sourceUri: Uri ->
         bannerTargetModule = target
-        val outputUri = createInternalCropOutputUri(context, "module_banner_crop")
+        val outputUri = createBackgroundCropOutputUri(context, "module_banner_crop")
         val intent = createBackgroundCropIntent(
             context = context,
             sourceUri = sourceUri,
@@ -841,7 +800,7 @@ private fun ModuleList(
                 context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                     inputStream.copyTo(outputStream)
                 } ?: error("Failed to open external crop output")
-            } ?: error("Failed to open selected media")
+            } ?: error("Failed to open selected image")
         }.isSuccess
 
         if (!copied) {
@@ -880,25 +839,9 @@ private fun ModuleList(
         val target = bannerTargetModule ?: return@rememberLauncherForActivityResult
         bannerTargetModule = null
         if (uri == null) return@rememberLauncherForActivityResult
-        if (isVideoUri(context, uri)) {
-            bannerTargetModule = target
-            pendingBannerVideoIsReframe = false
-            videoCropModuleBannerLauncher.launch(
-                createVideoCropIntent(
-                    context = context,
-                    videoUri = uri,
-                    aspectRatioX = 16f,
-                    aspectRatioY = 7f,
-                    cornerRadiusDp = 16f,
-                    title = customBannerCropTitle,
-                    initialTransform = VideoCropTransform.Default,
-                ),
-            )
-        } else {
-            pendingBannerPhotoModule = target
-            pendingBannerPhotoUri = uri
-            showBannerCropMethodDialog = true
-        }
+        pendingBannerPhotoModule = target
+        pendingBannerPhotoUri = uri
+        showBannerCropMethodDialog = true
     }
 
     SettingsChooseDialog(
@@ -1249,7 +1192,7 @@ private fun ModuleList(
                         } else {
                             bannerTargetModule = mod
                             pickModuleBannerLauncher.launch(
-                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                             )
                         }
                     },
@@ -1294,23 +1237,9 @@ private fun ModuleList(
                                     }
                                     if (cached == null) {
                                         snackBarHost.showReplacingSnackbar(bannerFailedMsg)
-                                    } else if (isVideoFile(cached)) {
-                                        bannerTargetModule = mod
-                                        pendingBannerVideoIsReframe = true
-                                        videoCropModuleBannerLauncher.launch(
-                                            createVideoCropIntent(
-                                                context = context,
-                                                videoUri = Uri.fromFile(cached),
-                                                aspectRatioX = 16f,
-                                                aspectRatioY = 7f,
-                                                cornerRadiusDp = 16f,
-                                                title = customBannerCropTitle,
-                                                initialTransform = getModuleBannerVideoTransform(appSettings, mod.dirId),
-                                            ),
-                                        )
                                     } else {
                                         pendingBannerPhotoModule = mod
-                                        pendingBannerPhotoUri = Uri.fromFile(cached)
+                                        pendingBannerPhotoUri = createFileProviderUri(context, cached)
                                         showBannerCropMethodDialog = true
                                     }
                                 }
@@ -1330,7 +1259,7 @@ private fun ModuleList(
                                 bannerActionModule = null
                                 bannerTargetModule = mod
                                 pickModuleBannerLauncher.launch(
-                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                                 )
                             }
                             .padding(horizontal = 12.dp, vertical = 12.dp),
@@ -1351,7 +1280,6 @@ private fun ModuleList(
                                         ModuleBannerEditor.remove(ksuCli.getRootShell(), mod)
                                     }
                                     if (result.isSuccess) {
-                                        clearModuleBannerVideoTransform(appSettings, mod.dirId)
                                         invalidateModuleBanner(mod.dirId)
                                         viewModel.dispatch(ModuleUiAction.Refresh(manual = true))
                                         snackBarHost.showReplacingSnackbar(bannerResetMsg)
@@ -1594,7 +1522,6 @@ fun ModuleItem(
     val themeConfig: ThemeConfig = koinInject()
     val cardConfig: CardConfig = koinInject()
     val homeCustomization: HomeCustomizationConfig = koinInject()
-    val appSettings: AppSettingsRepository = koinInject()
     val navigator = LocalNavigator.current
     val context = LocalContext.current
     val clipboardManager = context.getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
@@ -1608,11 +1535,6 @@ fun ModuleItem(
     }
 
     val banner = rememberModuleBanner(
-        moduleId = module.dirId,
-        banner = module.bannerPath,
-        enabled = homeCustomization.enableModuleBanner,
-    )
-    val videoBanner = rememberModuleBannerVideo(
         moduleId = module.dirId,
         banner = module.bannerPath,
         enabled = homeCustomization.enableModuleBanner,
@@ -1643,37 +1565,6 @@ fun ModuleItem(
         Box(
             modifier = Modifier.fillMaxWidth(),
         ) {
-            if (videoBanner != null) {
-                val bannerRev = moduleBannerRevision()
-                val videoTransform = remember(module.dirId, bannerRev) {
-                    getModuleBannerVideoTransform(appSettings, module.dirId)
-                }
-                val gradient = remember(bannerScrim) {
-                    Brush.horizontalGradient(
-                        listOf(
-                            bannerScrim.copy(alpha = 0.90f),
-                            bannerScrim.copy(alpha = 0.74f),
-                            bannerScrim.copy(alpha = 0.42f),
-                        ),
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .drawWithContent {
-                            drawContent()
-                            drawRect(gradient)
-                        },
-                ) {
-                    LoopingVideoBackground(
-                        videoUri = Uri.fromFile(videoBanner),
-                        modifier = Modifier.fillMaxSize(),
-                        isMuted = true,
-                        transform = videoTransform,
-                    )
-                }
-            }
-
             Column(
                 modifier = Modifier
                     .moduleBanner(banner, bannerScrim)

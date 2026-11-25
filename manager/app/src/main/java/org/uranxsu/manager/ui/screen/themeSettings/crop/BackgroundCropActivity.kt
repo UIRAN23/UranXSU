@@ -253,11 +253,7 @@ private fun BackgroundCropScreen(
     }
 
     val localOutputFile = remember(outputUri) {
-        if (outputUri.scheme == "file" && !outputUri.path.isNullOrBlank()) {
-            File(outputUri.path!!)
-        } else {
-            File(context.cacheDir, "crop_work_out_${System.currentTimeMillis()}.jpg")
-        }
+        File(context.cacheDir, "crop_work_out_${System.currentTimeMillis()}.jpg")
     }
     val localOutputUri = remember(localOutputFile) { Uri.fromFile(localOutputFile) }
 
@@ -266,9 +262,7 @@ private fun BackgroundCropScreen(
             stagedInputFile?.let { file ->
                 runCatching { file.delete() }
             }
-            if (outputUri != localOutputUri) {
-                runCatching { localOutputFile.delete() }
-            }
+            runCatching { localOutputFile.delete() }
         }
     }
 
@@ -323,20 +317,17 @@ private fun BackgroundCropScreen(
     }
 
     suspend fun deliverOutputFile(croppedLocalUri: Uri, width: Int, height: Int, offsetX: Int, offsetY: Int) {
-        val finalUri = withContext(Dispatchers.IO) {
-            if (outputUri != localOutputUri) {
-                context.contentResolver.openOutputStream(outputUri, "rwt")?.use { dest ->
-                    localOutputFile.inputStream().use { src ->
-                        src.copyTo(dest)
-                        dest.flush()
-                    }
-                } ?: error("Failed to write cropped output")
-                outputUri
-            } else {
-                croppedLocalUri
-            }
+        withContext(Dispatchers.IO) {
+            val croppedFile = croppedLocalUri.path?.let(::File)?.takeIf { it.isFile } ?: localOutputFile
+            context.contentResolver.openOutputStream(outputUri, "rwt")?.use { dest ->
+                croppedFile.inputStream().use { src ->
+                    src.copyTo(dest)
+                    dest.flush()
+                }
+            } ?: error("Failed to write cropped output")
+            runCatching { croppedFile.delete() }
         }
-        onCropped(finalUri, width, height, offsetX, offsetY)
+        onCropped(outputUri, width, height, offsetX, offsetY)
     }
 
     fun cropCurrentImage() {
@@ -875,15 +866,11 @@ private class BelowAnchorTooltipPositionProvider : PopupPositionProvider {
     }
 }
 
-fun createInternalCropOutputUri(context: Context, prefix: String = "crop"): Uri {
-    val outputFile = File(context.cacheDir, "${prefix}_${System.currentTimeMillis()}.jpg").apply {
-        parentFile?.mkdirs()
-        delete()
-        createNewFile()
-        deleteOnExit()
-    }
-    return Uri.fromFile(outputFile)
-}
+fun createFileProviderUri(context: Context, file: File): Uri = FileProvider.getUriForFile(
+    context,
+    "${context.packageName}.fileprovider",
+    file,
+)
 
 fun createBackgroundCropOutputUri(context: Context, prefix: String = "crop"): Uri {
     val outputFile = File(context.cacheDir, "${prefix}_${System.currentTimeMillis()}.jpg").apply {
@@ -893,11 +880,7 @@ fun createBackgroundCropOutputUri(context: Context, prefix: String = "crop"): Ur
         deleteOnExit()
     }
 
-    return FileProvider.getUriForFile(
-        context,
-        "${context.packageName}.fileprovider",
-        outputFile,
-    )
+    return createFileProviderUri(context, outputFile)
 }
 
 fun createBackgroundCropIntent(
@@ -909,18 +892,30 @@ fun createBackgroundCropIntent(
     maxSizeX: Int = 0,
     maxSizeY: Int = 0,
     title: String? = null,
-): Intent = Intent(context, BackgroundCropActivity::class.java).apply {
-    // Photo Picker URIs grant read access only via data or clipData, not custom Intent extras.
-    clipData = ClipData.newRawUri("crop_input", sourceUri)
-    putExtra(UCrop.EXTRA_INPUT_URI, sourceUri)
-    putExtra(UCrop.EXTRA_OUTPUT_URI, outputUri)
-    putExtra(UCrop.EXTRA_ASPECT_RATIO_X, aspectRatioX)
-    putExtra(UCrop.EXTRA_ASPECT_RATIO_Y, aspectRatioY)
-    if (maxSizeX > 0) putExtra(UCrop.EXTRA_MAX_SIZE_X, maxSizeX)
-    if (maxSizeY > 0) putExtra(UCrop.EXTRA_MAX_SIZE_Y, maxSizeY)
-    if (!title.isNullOrBlank()) putExtra(EXTRA_CROP_TITLE, title)
-    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+): Intent {
+    val safeSourceUri = if (sourceUri.scheme == "file" && !sourceUri.path.isNullOrBlank()) {
+        createFileProviderUri(context, File(sourceUri.path!!))
+    } else {
+        sourceUri
+    }
+    val safeOutputUri = if (outputUri.scheme == "file" && !outputUri.path.isNullOrBlank()) {
+        createFileProviderUri(context, File(outputUri.path!!))
+    } else {
+        outputUri
+    }
+    return Intent(context, BackgroundCropActivity::class.java).apply {
+        // Photo Picker URIs grant read access only via data or clipData, not custom Intent extras.
+        clipData = ClipData.newRawUri("crop_input", safeSourceUri)
+        putExtra(UCrop.EXTRA_INPUT_URI, safeSourceUri)
+        putExtra(UCrop.EXTRA_OUTPUT_URI, safeOutputUri)
+        putExtra(UCrop.EXTRA_ASPECT_RATIO_X, aspectRatioX)
+        putExtra(UCrop.EXTRA_ASPECT_RATIO_Y, aspectRatioY)
+        if (maxSizeX > 0) putExtra(UCrop.EXTRA_MAX_SIZE_X, maxSizeX)
+        if (maxSizeY > 0) putExtra(UCrop.EXTRA_MAX_SIZE_Y, maxSizeY)
+        if (!title.isNullOrBlank()) putExtra(EXTRA_CROP_TITLE, title)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
 }
 
 fun Context.backgroundCropSize(): Pair<Int, Int> {

@@ -36,6 +36,7 @@ data class ThemeVariantData(
     val hasCardBackground: Boolean? = null,
     val hideHomeCardStatusText: Boolean? = null,
     val hideHomeCardDecoration: Boolean? = null,
+    val homeStatusScale: Float? = null,
     val enableFloatingBottomBar: Boolean? = null,
     val enableNavigationBadge: Boolean? = null,
     val enableSwipeDismiss: Boolean? = null,
@@ -58,6 +59,7 @@ data class ThemePackageData(
     val hasCardBackground: Boolean? = null,
     val hideHomeCardStatusText: Boolean? = null,
     val hideHomeCardDecoration: Boolean? = null,
+    val homeStatusScale: Float? = null,
     val enableFloatingBottomBar: Boolean? = null,
     val enableNavigationBadge: Boolean? = null,
     val enableSwipeDismiss: Boolean? = null,
@@ -102,7 +104,7 @@ data class ImportedTheme(
 object ThemePackageStorage {
     const val BASE_VERSION = 2
     const val MIN_SUPPORTED_VERSION = 1
-    const val MAX_SUPPORTED_VERSION = 5
+    const val MAX_SUPPORTED_VERSION = 6
 
     private const val THEME_ENTRY = "theme.json"
     private const val BACKGROUND_ENTRY = "background"

@@ -5,11 +5,13 @@ import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
+import android.system.Os
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -17,8 +19,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,13 +36,16 @@ import androidx.compose.material.icons.twotone.Edit
 import androidx.compose.material.icons.twotone.Height
 import androidx.compose.material.icons.twotone.Image
 import androidx.compose.material.icons.twotone.Opacity
+import androidx.compose.material.icons.twotone.TaskAlt
 import androidx.compose.material.icons.twotone.Upload
 import androidx.compose.material.icons.twotone.Visibility
 import androidx.compose.material.icons.twotone.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -51,9 +58,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
 import com.yalantis.ucrop.UCrop
 import java.io.File
 import kotlin.math.roundToInt
@@ -61,9 +73,6 @@ import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import org.uranxsu.manager.R
 import org.uranxsu.manager.ui.component.KeyPointSlider
-import org.uranxsu.manager.ui.component.media.VideoCropTransform
-import org.uranxsu.manager.ui.component.media.isVideoFile
-import org.uranxsu.manager.ui.component.media.isVideoUri
 import org.uranxsu.manager.ui.component.settings.SegmentedColumn
 import org.uranxsu.manager.ui.component.settings.SettingsBaseWidget
 import org.uranxsu.manager.ui.component.settings.SettingsChooseDialog
@@ -72,22 +81,24 @@ import org.uranxsu.manager.ui.component.settings.SettingsJumpPageWidget
 import org.uranxsu.manager.ui.component.settings.SettingsSwitchWidget
 import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.navigation.Route
+import org.uranxsu.manager.ui.screen.LabelText
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
-import org.uranxsu.manager.ui.screen.themeSettings.crop.createInternalCropOutputUri
-import org.uranxsu.manager.ui.screen.themeSettings.crop.createVideoCropIntent
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createFileProviderUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.getParcelableExtraCompat
-import org.uranxsu.manager.ui.screen.themeSettings.crop.parseVideoCropResult
 import org.uranxsu.manager.ui.screen.themeSettings.crop.statusCardCropDimensions
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.CardConfig
 import org.uranxsu.manager.ui.theme.HomeCustomizationConfig
 import org.uranxsu.manager.ui.theme.ThemeConfig
 import org.uranxsu.manager.ui.util.CustomTextConfig
+import org.uranxsu.manager.ui.util.CustomTextKey
 import org.uranxsu.manager.ui.util.ImportedTheme
 import org.uranxsu.manager.ui.util.ThemeApplyOptions
 import org.uranxsu.manager.ui.util.ThemePackageApplier
 import org.uranxsu.manager.ui.util.ThemePackageStorage
+import org.uranxsu.manager.ui.util.customText
+import org.uranxsu.manager.ui.viewmodel.HomeUiState
 import org.uranxsu.manager.ui.viewmodel.HomeViewModel
 import org.uranxsu.manager.ui.viewmodel.SettingsUiAction
 import org.uranxsu.manager.ui.viewmodel.SettingsUiState
@@ -121,10 +132,14 @@ fun AppIconSettings(
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun HomeCustomizationSettings() {
+fun HomeCustomizationSettings(
+    homeUiState: HomeUiState = HomeUiState(),
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val home: HomeCustomizationConfig = koinInject()
+    val cardConfig: CardConfig = koinInject()
+    val themeConfig: ThemeConfig = koinInject()
     val failedMsg = stringResource(R.string.background_crop_failed)
     val externalCropUnavailable = stringResource(R.string.background_external_crop_unavailable)
     val customCardCropTitle = stringResource(R.string.custom_card_crop_title)
@@ -133,13 +148,11 @@ fun HomeCustomizationSettings() {
     var pendingCardPickedSourceUri by remember { mutableStateOf<Uri?>(null) }
     var activeCardCropSourceUri by remember { mutableStateOf<Uri?>(null) }
     var pendingCardExternalCropUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingCardVideoIsReframe by remember { mutableStateOf(false) }
     var showCardCropMethodDialog by remember { mutableStateOf(false) }
 
     fun commitCardCroppedPhoto(outputUri: Uri) {
         val originalSource = activeCardCropSourceUri
         activeCardCropSourceUri = null
-        home.updateStatusCardVideoTransform(VideoCropTransform.Default)
         scope.launch {
             if (originalSource != null) {
                 home.saveStatusCardSourceImage(context, originalSource)
@@ -184,27 +197,8 @@ fun HomeCustomizationSettings() {
         pendingCardExternalCropUri = null
     }
 
-    val videoCropCardLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val isReframe = pendingCardVideoIsReframe
-        pendingCardVideoIsReframe = false
-        if (result.resultCode == Activity.RESULT_OK) {
-            parseVideoCropResult(result.data)?.let { (videoUri, transform) ->
-                home.updateStatusCardVideoTransform(transform)
-                if (!isReframe && videoUri != null) {
-                    scope.launch {
-                        if (!home.saveStatusCardImage(context, videoUri)) {
-                            Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     val launchCardInAppCrop = { sourceUri: Uri ->
-        val outputUri = createInternalCropOutputUri(context, "status_card_crop")
+        val outputUri = createBackgroundCropOutputUri(context, "status_card_crop")
         val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
         val intent = createBackgroundCropIntent(
             context = context,
@@ -226,7 +220,7 @@ fun HomeCustomizationSettings() {
                 context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                     inputStream.copyTo(outputStream)
                 } ?: error("Failed to open external crop output")
-            } ?: error("Failed to open selected media")
+            } ?: error("Failed to open selected image")
         }.isSuccess
 
         if (!copied) {
@@ -265,25 +259,9 @@ fun HomeCustomizationSettings() {
         ActivityResultContracts.PickVisualMedia(),
     ) { uri: Uri? ->
         if (uri != null) {
-            if (isVideoUri(context, uri)) {
-                pendingCardVideoIsReframe = false
-                val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
-                videoCropCardLauncher.launch(
-                    createVideoCropIntent(
-                        context = context,
-                        videoUri = uri,
-                        aspectRatioX = cardW,
-                        aspectRatioY = cardH,
-                        cornerRadiusDp = 20f,
-                        title = customCardCropTitle,
-                        initialTransform = VideoCropTransform.Default,
-                    ),
-                )
-            } else {
-                pendingCardPickedSourceUri = uri
-                pendingCardPhotoUri = uri
-                showCardCropMethodDialog = true
-            }
+            pendingCardPickedSourceUri = uri
+            pendingCardPhotoUri = uri
+            showCardCropMethodDialog = true
         }
     }
 
@@ -314,16 +292,31 @@ fun HomeCustomizationSettings() {
     val activeCardFile = remember(home.statusCardImagePath, home.statusCardImageVersion) {
         home.statusCardImagePath?.let(::File)?.takeIf { it.isFile }
     }
-    val activeCardIsVideo = remember(activeCardFile) {
-        activeCardFile != null && isVideoFile(activeCardFile)
-    }
-    val cardMediaDescription = when {
-        activeCardFile == null -> stringResource(R.string.home_card_image_summary)
-        activeCardIsVideo -> stringResource(R.string.home_card_media_video_active)
-        else -> stringResource(R.string.home_card_media_photo_active)
+    val cardMediaDescription = if (activeCardFile == null) {
+        stringResource(R.string.home_card_image_summary)
+    } else {
+        stringResource(R.string.home_card_media_photo_active)
     }
 
     SegmentedColumn(title = stringResource(R.string.home_customization_section)) {
+        item { shape ->
+            Surface(
+                modifier = Modifier.clip(shape),
+                color = if (themeConfig.isEnableBlurExp) {
+                    Color.Transparent
+                } else {
+                    MaterialTheme.colorScheme.surfaceBright.copy(alpha = cardConfig.cardAlpha)
+                },
+            ) {
+                HomeStatusCardLivePreview(
+                    home = home,
+                    homeUiState = homeUiState,
+                    activeCardFile = activeCardFile,
+                    modifier = Modifier.padding(12.dp),
+                )
+            }
+        }
+
         item {
             SettingsBaseWidget(
                 icon = Icons.TwoTone.Image,
@@ -331,7 +324,7 @@ fun HomeCustomizationSettings() {
                 description = cardMediaDescription,
                 onClick = {
                     pickCardImage.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
                     )
                 },
             )
@@ -341,34 +334,15 @@ fun HomeCustomizationSettings() {
             SettingsJumpPageWidget(
                 icon = Icons.TwoTone.Crop,
                 title = stringResource(R.string.crop_adjust_title),
-                description = stringResource(
-                    if (activeCardIsVideo) R.string.crop_adjust_video_summary else R.string.crop_adjust_photo_summary,
-                ),
+                description = stringResource(R.string.crop_adjust_photo_summary),
                 onClick = {
-                    val file = activeCardFile ?: return@SettingsJumpPageWidget
-                    if (activeCardIsVideo) {
-                        pendingCardVideoIsReframe = true
-                        val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
-                        videoCropCardLauncher.launch(
-                            createVideoCropIntent(
-                                context = context,
-                                videoUri = Uri.fromFile(file),
-                                aspectRatioX = cardW,
-                                aspectRatioY = cardH,
-                                cornerRadiusDp = 20f,
-                                title = customCardCropTitle,
-                                initialTransform = home.statusCardVideoTransform,
-                            ),
-                        )
+                    val sourceFile = home.getStatusCardSourceFile(context)
+                    if (sourceFile != null) {
+                        pendingCardPickedSourceUri = null
+                        pendingCardPhotoUri = createFileProviderUri(context, sourceFile)
+                        showCardCropMethodDialog = true
                     } else {
-                        val sourceFile = home.getStatusCardSourceFile(context)
-                        if (sourceFile != null) {
-                            pendingCardPickedSourceUri = null
-                            pendingCardPhotoUri = Uri.fromFile(sourceFile)
-                            showCardCropMethodDialog = true
-                        } else {
-                            Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
-                        }
+                        Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
                     }
                 },
             )
@@ -512,6 +486,119 @@ fun HomeCustomizationSettings() {
                 description = stringResource(R.string.custom_texts_summary),
                 onClick = { navigator.push(Route.CustomTexts) },
             )
+        }
+    }
+}
+
+@Composable
+private fun HomeStatusCardLivePreview(
+    home: HomeCustomizationConfig,
+    homeUiState: HomeUiState,
+    activeCardFile: File?,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val workingModeText = customText(CustomTextKey.HOME_STATUS_WORKING)
+    val workingModeSurfaceText = if (homeUiState.systemStatus.lkmMode == true) "LKM" else "Built-in"
+    val superuserCount = homeUiState.systemInfo.superuserCount
+    val moduleCount = homeUiState.systemInfo.moduleCount
+    val hasPhoto = activeCardFile != null
+    val textColor = if (hasPhoto) Color.White else MaterialTheme.colorScheme.onPrimaryContainer
+    val subtextColor = if (hasPhoto) {
+        Color.White.copy(alpha = 0.88f)
+    } else {
+        MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+    }
+
+    val painter = activeCardFile?.let { file ->
+        rememberAsyncImagePainter(
+            model = ImageRequest.Builder(context)
+                .data(file)
+                .setParameter("v", home.statusCardImageVersion)
+                .crossfade(true)
+                .build(),
+        )
+    }
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp)),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = home.statusCardHeight.dp),
+        ) {
+            if (painter != null) {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
+                Box(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .background(Color.Black.copy(alpha = home.statusCardScrim)),
+                )
+            }
+            if (!home.hideStatusCardText || !home.hideStatusCardDecoration) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.CenterStart)
+                        .padding(horizontal = 20.dp, vertical = 18.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (!home.hideStatusCardDecoration) {
+                            Icon(
+                                imageVector = Icons.TwoTone.TaskAlt,
+                                contentDescription = null,
+                                tint = textColor,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        if (!home.hideStatusCardText) {
+                            Text(
+                                text = workingModeText,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = textColor,
+                            )
+                        }
+                        if (!home.hideStatusCardDecoration) {
+                            LabelText(
+                                label = workingModeSurfaceText,
+                                containerColor = MaterialTheme.colorScheme.primary,
+                            )
+                            if (Os.uname().machine != "aarch64") {
+                                LabelText(
+                                    label = Os.uname().machine,
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                    if (!home.hideStatusCardText) {
+                        Text(
+                            text = stringResource(
+                                R.string.home_short_info,
+                                superuserCount,
+                                moduleCount,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = subtextColor,
+                        )
+                    }
+                }
+            }
         }
     }
 }

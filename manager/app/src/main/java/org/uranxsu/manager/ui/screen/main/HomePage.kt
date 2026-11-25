@@ -2,7 +2,6 @@ package org.uranxsu.manager.ui.screen.main
 
 import android.content.Context
 import android.content.Intent
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -78,22 +77,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.scale
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -125,9 +116,6 @@ import org.uranxsu.manager.magica.MagicaService
 import org.uranxsu.manager.ui.component.KsuIsValid
 import org.uranxsu.manager.ui.component.SwipeableSnackbarHost
 import org.uranxsu.manager.ui.component.WarningCard
-import org.uranxsu.manager.ui.component.media.LoopingVideoBackground
-import org.uranxsu.manager.ui.component.media.computeVideoOverflow
-import org.uranxsu.manager.ui.component.media.isVideoFile
 import org.uranxsu.manager.ui.component.rememberConfirmDialog
 import org.uranxsu.manager.ui.component.rememberLoadingDialog
 import org.uranxsu.manager.ui.component.settings.SegmentedColumn
@@ -511,9 +499,15 @@ fun RebootDropdownItems(
     onReboot: (String) -> Unit,
 ) {
     items.onEachIndexed { index, (id, reason) ->
+        val label = when (id) {
+            R.string.reboot -> customText(CustomTextKey.COMMON_REBOOT)
+            R.string.reboot_recovery -> customText(CustomTextKey.COMMON_REBOOT_RECOVERY)
+            R.string.reboot_bootloader -> customText(CustomTextKey.COMMON_REBOOT_BOOTLOADER)
+            else -> stringResource(id)
+        }
         DropdownMenuItem(
             shape = MenuDefaults.itemShape(index, items.size).shape,
-            text = { Text(stringResource(id)) },
+            text = { Text(label) },
             onClick = { onReboot(reason) },
         )
     }
@@ -635,9 +629,6 @@ private fun StatusCard(
     }
 
     if (statusCardImageFile != null && systemStatus.ksuVersion != null) {
-        val isVideo = remember(statusCardImageFile) {
-            isVideoFile(statusCardImageFile)
-        }
         val workingModeText = when {
             systemStatus.isSafeMode -> customText(CustomTextKey.HOME_TAG_SAFEMODE)
             else -> customText(CustomTextKey.HOME_STATUS_WORKING)
@@ -667,70 +658,12 @@ private fun StatusCard(
                     .fillMaxWidth()
                     .defaultMinSize(minHeight = homeCustomization.statusCardHeight.dp),
             ) {
-                if (isVideo) {
-                    val videoTransform = homeCustomization.statusCardVideoTransform.sanitized()
-                    val firstFrame by produceState<ImageBitmap?>(
-                        initialValue = null,
-                        statusCardImageFile.absolutePath,
-                        homeCustomization.statusCardImageVersion,
-                    ) {
-                        value = withContext(Dispatchers.IO) {
-                            runCatching {
-                                val retriever = MediaMetadataRetriever()
-                                try {
-                                    retriever.setDataSource(statusCardImageFile.absolutePath)
-                                    retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                                        ?.asImageBitmap()
-                                } finally {
-                                    runCatching { retriever.release() }
-                                }
-                            }.getOrNull()
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .clipToBounds()
-                            .drawWithContent {
-                                val bmp = firstFrame
-                                if (bmp != null && bmp.width > 0 && bmp.height > 0 && size.width > 0f && size.height > 0f) {
-                                    val bw = bmp.width.toFloat()
-                                    val bh = bmp.height.toFloat()
-                                    val baseScale = maxOf(size.width / bw, size.height / bh)
-                                    val finalScale = baseScale * videoTransform.scale
-                                    val (maxDx, maxDy) = computeVideoOverflow(
-                                        viewWidth = size.width,
-                                        viewHeight = size.height,
-                                        mediaWidth = bw,
-                                        mediaHeight = bh,
-                                        scale = videoTransform.scale,
-                                    )
-                                    val left = (size.width - bw * finalScale) / 2f + videoTransform.offsetX * maxDx
-                                    val top = (size.height - bh * finalScale) / 2f + videoTransform.offsetY * maxDy
-                                    translate(left = left, top = top) {
-                                        scale(scaleX = finalScale, scaleY = finalScale, pivot = Offset.Zero) {
-                                            drawImage(image = bmp, filterQuality = FilterQuality.Low)
-                                        }
-                                    }
-                                }
-                                drawContent()
-                            },
-                    ) {
-                        LoopingVideoBackground(
-                            videoUri = Uri.fromFile(statusCardImageFile),
-                            modifier = Modifier.matchParentSize(),
-                            isMuted = true,
-                            transform = videoTransform,
-                        )
-                    }
-                } else {
-                    Image(
-                        painter = painter,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.matchParentSize(),
-                    )
-                }
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
                 Box(
                     modifier = Modifier
                         .matchParentSize()
@@ -898,7 +831,7 @@ private fun StatusCard(
                 iconSize = 18.dp,
                 containerColor = MaterialTheme.colorScheme.errorContainer,
                 isError = true,
-                title = stringResource(R.string.home_unsupported),
+                title = customText(CustomTextKey.HOME_STATUS_UNSUPPORTED),
                 description = stringResource(R.string.home_unsupported_reason),
             )
         }
@@ -911,6 +844,7 @@ fun LearnMoreCard(
 ) {
     val uriHandler = LocalUriHandler.current
     val url = stringResource(R.string.home_learn_kernelsu_url)
+    val learnTitle = customText(CustomTextKey.HOME_LEARN_TITLE)
 
     SegmentedColumn(
         modifier = Modifier.fillMaxWidth(),
@@ -921,7 +855,7 @@ fun LearnMoreCard(
             SettingsBaseWidget(
                 icon = Icons.AutoMirrored.TwoTone.MenuBook.takeIf { showIcon },
                 iconPlaceholder = false,
-                title = stringResource(R.string.home_learn_kernelsu),
+                title = learnTitle,
                 description = stringResource(R.string.home_click_to_learn_kernelsu),
                 onClick = {
                     uriHandler.openUri(url)
@@ -936,16 +870,17 @@ fun DonateCard(
     showIcon: Boolean,
 ) {
     val uriHandler = LocalUriHandler.current
+    val supportTitle = customText(CustomTextKey.HOME_SUPPORT_TITLE)
     SegmentedColumn(
         modifier = Modifier.fillMaxWidth(),
-        title = stringResource(R.string.home_support_title),
+        title = supportTitle,
         contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
     ) {
         item {
             SettingsBaseWidget(
                 icon = Icons.TwoTone.VolunteerActivism.takeIf { showIcon },
                 iconPlaceholder = false,
-                title = stringResource(R.string.home_support_title),
+                title = supportTitle,
                 description = stringResource(R.string.home_support_content),
                 onClick = {
                     uriHandler.openUri("https://patreon.com/weishu")

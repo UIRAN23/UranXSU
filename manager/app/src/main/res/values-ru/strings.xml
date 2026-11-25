@@ -183,7 +183,7 @@
     <string name="backup_allowlist">Резервное копирование списка</string>
     <string name="restore_allowlist">Белый список восстановления ключей</string>
     <string name="settings_custom_background">Пользовательский фон приложения</string>
-    <string name="settings_custom_background_summary">Выберите фото с кадрированием или видео из галереи в качестве фона</string>
+    <string name="settings_custom_background_summary">Выберите фото с кадрированием в качестве фона</string>
     <string name="settings_config_enable_blur">Включить блюр</string>
     <string name="settings_config_enable_blur_summary">Использовать блюр для приложения</string>
     <string name="settings_exp_draw_background_to_blur">Нарисовать кастомный фон для блюра</string>
@@ -824,9 +824,9 @@
     <string name="app_icon_default">По умолчанию (UranXSU)</string>
     <string name="app_icon_miku">Мику Накано</string>
     <string name="home_customization_section">Главный экран и модули</string>
-    <string name="home_card_image">Изображение / видео карточки статуса</string>
-    <string name="home_card_image_summary">Выберите изображение с кадрированием или зацикленное видео для карточки статуса</string>
-    <string name="home_card_image_remove">Убрать медиа карточки</string>
+    <string name="home_card_image">Изображение карточки статуса</string>
+    <string name="home_card_image_summary">Выберите и обрежьте изображение для карточки статуса</string>
+    <string name="home_card_image_remove">Убрать изображение карточки</string>
     <string name="home_card_image_dim">Затемнение карточки</string>
     <string name="home_status_card_height">Высота статус-карточки</string>
     <string name="home_status_card_height_summary">Увеличение или уменьшение карточки на главном экране (%1$d dp)</string>
@@ -879,11 +879,9 @@
     <string name="custom_banner_crop_title">Кадрирование баннера модуля</string>
     <string name="local_network_permission_description">Разрешение на доступ к локальной сети требуется для проверки обновлений модулей с локальных серверов.</string>
     <string name="wallpaper_section">Обои и визуальные эффекты</string>
-    <string name="settings_custom_background_change">Сменить обои или видео</string>
+    <string name="settings_custom_background_change">Сменить обои</string>
     <string name="media_type_photo">Сейчас: фото</string>
-    <string name="media_type_video">Сейчас: видео</string>
     <string name="home_card_media_photo_active">Сейчас: фото (нажмите, чтобы заменить)</string>
-    <string name="home_card_media_video_active">Сейчас: зацикленное видео (нажмите, чтобы заменить)</string>
     <string name="gestures_animations_section">Жесты и анимации</string>
     <string name="theme_import_dialog_title">Импорт темы (.sukisu)</string>
     <string name="theme_import_select_all">Выбрать всё</string>
@@ -902,10 +900,5 @@
     <string name="crop_use_original">Оригинал</string>
     <string name="crop_adjust_title">Настроить кадрирование</string>
     <string name="crop_adjust_photo_summary">Перекадрировать текущее изображение</string>
-    <string name="crop_adjust_video_summary">Настроить масштаб и положение видео</string>
-    <string name="video_crop_title">Кадрирование видео</string>
-    <string name="video_crop_hint">Сведите или разведите пальцы для масштаба и перетащите видео</string>
-    <string name="video_crop_zoom">Масштаб</string>
-    <string name="video_crop_load_failed">Предпросмотр видео недоступен, параметры всё равно сохранятся</string>
     <string name="module_banner_crop">Кадрировать</string>
 </resources>

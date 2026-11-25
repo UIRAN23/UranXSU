@@ -332,7 +332,7 @@ private fun SuperUserContent(
                             .padding(bottom = 16.dp),
                     )
                     Text(
-                        text = stringResource(R.string.no_apps_found),
+                        text = customText(CustomTextKey.SUPERUSER_EMPTY),
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.bodyLarge,
                     )

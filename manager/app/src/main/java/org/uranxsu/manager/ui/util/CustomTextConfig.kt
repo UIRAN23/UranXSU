@@ -44,10 +44,7 @@ enum class CustomTextKey(
     HOME_INFO_ZYGISK("home.info_zygisk", R.string.home_zygisk_implement, R.string.home_zygisk_implement, CustomTextGroup.HOME),
     HOME_INFO_METAMODULE("home.info_metamodule", R.string.home_meta_module_implement, R.string.home_meta_module_implement, CustomTextGroup.HOME),
     HOME_INFO_SUSFS("home.info_susfs", R.string.home_susfs_version, R.string.home_susfs_version, CustomTextGroup.HOME),
-    HOME_BTN_INSTALL("home.btn_install", R.string.install, R.string.install, CustomTextGroup.HOME),
     HOME_STATUS_UNSUPPORTED("home.status_unsupported", R.string.home_unsupported, R.string.home_unsupported, CustomTextGroup.HOME),
-    HOME_STATS_SUPERUSER("home.stats_superuser", R.string.superuser, R.string.superuser, CustomTextGroup.HOME),
-    HOME_STATS_MODULE("home.stats_module", R.string.module, R.string.module, CustomTextGroup.HOME),
     HOME_SUPPORT_TITLE("home.support_title", R.string.home_support_title, R.string.home_support_title, CustomTextGroup.HOME),
     HOME_LEARN_TITLE("home.learn_title", R.string.home_learn_kernelsu, R.string.home_learn_kernelsu, CustomTextGroup.HOME),
 
@@ -69,7 +66,6 @@ enum class CustomTextKey(
     EXTENSION_SUSFS("extension.susfs", R.string.susfs_config_setting_title, R.string.susfs_config_setting_title, CustomTextGroup.PAGE_FEATURE),
     PAGE_MOUNT_ENGINE("page.mount_engine", R.string.mount_engine_title, R.string.mount_engine_title, CustomTextGroup.PAGE_FEATURE),
     ZYGISK_SETTINGS_TITLE("zygisk.settings_title", R.string.builtin_zygisk_title, R.string.builtin_zygisk_title, CustomTextGroup.PAGE_FEATURE),
-    MODULE_ACTION_INSTALL("module.install", R.string.install, R.string.install, CustomTextGroup.PAGE_FEATURE),
     MODULE_EMPTY("module.empty", R.string.module_empty, R.string.module_empty, CustomTextGroup.PAGE_FEATURE),
     SUPERUSER_EMPTY("superuser.empty", R.string.no_apps_found, R.string.no_apps_found, CustomTextGroup.PAGE_FEATURE),
 

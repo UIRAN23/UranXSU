@@ -169,10 +169,12 @@ import org.uranxsu.manager.ui.component.settings.SettingsTextFieldWidget
 import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.navigation.Route
 import org.uranxsu.manager.ui.screen.LabelText
+import org.uranxsu.manager.ui.screen.themeSettings.crop.copyUriToCropOutput
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createFileProviderUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.getParcelableExtraCompat
+import org.uranxsu.manager.ui.screen.themeSettings.crop.stageCropInputUri
 import org.uranxsu.manager.ui.theme.CardConfig
 import org.uranxsu.manager.ui.theme.HomeCustomizationConfig
 import org.uranxsu.manager.ui.theme.ThemeConfig
@@ -777,58 +779,63 @@ private fun ModuleList(
         }
     }
 
-    val launchModuleBannerInAppCrop = { target: InstalledModule, sourceUri: Uri ->
-        bannerTargetModule = target
-        val outputUri = createBackgroundCropOutputUri(context, "module_banner_crop")
-        val intent = createBackgroundCropIntent(
-            context = context,
-            sourceUri = sourceUri,
-            outputUri = outputUri,
-            aspectRatioX = 16f,
-            aspectRatioY = 7f,
-            maxSizeX = 2048,
-            maxSizeY = 2048,
-            title = customBannerCropTitle,
-        )
-        cropModuleBannerLauncher.launch(intent)
+    val launchModuleBannerInAppCrop: (InstalledModule, Uri) -> Unit = { target, sourceUri ->
+        scope.launch {
+            val stagedUri = stageCropInputUri(context, sourceUri, "mod_banner_crop_in") ?: sourceUri
+            bannerTargetModule = target
+            val outputUri = createBackgroundCropOutputUri(context, "module_banner_crop")
+            val intent = createBackgroundCropIntent(
+                context = context,
+                sourceUri = stagedUri,
+                outputUri = outputUri,
+                aspectRatioX = 16f,
+                aspectRatioY = 7f,
+                maxSizeX = 2048,
+                maxSizeY = 2048,
+                title = customBannerCropTitle,
+            )
+            try {
+                cropModuleBannerLauncher.launch(intent)
+            } catch (t: Throwable) {
+                Log.e("ModulePage", "In-app banner crop failed", t)
+                bannerTargetModule = null
+                snackBarHost.showReplacingSnackbar(bannerFailedMsg)
+            }
+        }
     }
 
-    val launchModuleBannerExternalCrop = { target: InstalledModule, sourceUri: Uri ->
-        val uri = createBackgroundCropOutputUri(context, "module_banner_crop_ext")
-        val copied = runCatching {
-            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                } ?: error("Failed to open external crop output")
-            } ?: error("Failed to open selected image")
-        }.isSuccess
+    val launchModuleBannerExternalCrop: (InstalledModule, Uri) -> Unit = { target, sourceUri ->
+        scope.launch {
+            val uri = createBackgroundCropOutputUri(context, "module_banner_crop_ext")
+            val copied = copyUriToCropOutput(context, sourceUri, uri)
 
-        if (!copied) {
-            Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
-            launchModuleBannerInAppCrop(target, sourceUri)
-        } else {
-            val intent = Intent("com.android.camera.action.CROP").apply {
-                clipData = ClipData.newRawUri("crop_output", uri)
-                setDataAndType(uri, "image/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                putExtra("crop", "true")
-                putExtra("aspectX", 16)
-                putExtra("aspectY", 7)
-                putExtra("outputX", 1600)
-                putExtra("outputY", 700)
-                putExtra("return-data", false)
-                putExtra(MediaStore.EXTRA_OUTPUT, uri)
-            }
-            try {
-                bannerTargetModule = target
-                pendingBannerExternalCropUri = uri
-                externalCropModuleBannerLauncher.launch(intent)
-            } catch (t: Throwable) {
-                Log.e("ModulePage", "External banner crop failed, fallback to in-app crop", t)
-                pendingBannerExternalCropUri = null
+            if (!copied) {
                 Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
                 launchModuleBannerInAppCrop(target, sourceUri)
+            } else {
+                val intent = Intent("com.android.camera.action.CROP").apply {
+                    clipData = ClipData.newRawUri("crop_output", uri)
+                    setDataAndType(uri, "image/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    putExtra("crop", "true")
+                    putExtra("aspectX", 16)
+                    putExtra("aspectY", 7)
+                    putExtra("outputX", 1600)
+                    putExtra("outputY", 700)
+                    putExtra("return-data", false)
+                    putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                }
+                try {
+                    bannerTargetModule = target
+                    pendingBannerExternalCropUri = uri
+                    externalCropModuleBannerLauncher.launch(intent)
+                } catch (t: Throwable) {
+                    Log.e("ModulePage", "External banner crop failed, fallback to in-app crop", t)
+                    pendingBannerExternalCropUri = null
+                    Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
+                    launchModuleBannerInAppCrop(target, sourceUri)
+                }
             }
         }
     }

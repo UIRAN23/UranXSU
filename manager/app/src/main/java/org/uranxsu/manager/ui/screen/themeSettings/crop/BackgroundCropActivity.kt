@@ -3,6 +3,7 @@ package org.uranxsu.manager.ui.screen.themeSettings.crop
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ClipData
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -10,6 +11,7 @@ import android.graphics.BitmapFactory
 import android.graphics.RectF
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
@@ -319,7 +321,10 @@ private fun BackgroundCropScreen(
     suspend fun deliverOutputFile(croppedLocalUri: Uri, width: Int, height: Int, offsetX: Int, offsetY: Int) {
         withContext(Dispatchers.IO) {
             val croppedFile = croppedLocalUri.path?.let(::File)?.takeIf { it.isFile } ?: localOutputFile
-            context.contentResolver.openOutputStream(outputUri, "rwt")?.use { dest ->
+            (
+                context.contentResolver.openOutputStream(outputUri, "wt")
+                    ?: context.contentResolver.openOutputStream(outputUri)
+                )?.use { dest ->
                 croppedFile.inputStream().use { src ->
                     src.copyTo(dest)
                     dest.flush()
@@ -883,6 +888,88 @@ fun createBackgroundCropOutputUri(context: Context, prefix: String = "crop"): Ur
     return createFileProviderUri(context, outputFile)
 }
 
+private val CROP_CACHE_TEMP_PREFIXES = listOf(
+    "crop_input_",
+    "bg_crop_in_",
+    "bg_crop_src_",
+    "card_crop_in_",
+    "card_crop_src_",
+    "mod_banner_crop_in_",
+    "crop_src_",
+    "crop_work_out_",
+    "background_crop_",
+    "status_card_crop_",
+    "module_banner_crop_",
+)
+
+private fun pruneOldCropCacheFiles(cacheDir: File) {
+    val cutoff = System.currentTimeMillis() - 30L * 60L * 1000L
+    cacheDir.listFiles()?.forEach { file ->
+        if (file.isFile &&
+            file.lastModified() < cutoff &&
+            CROP_CACHE_TEMP_PREFIXES.any { file.name.startsWith(it) }
+        ) {
+            runCatching { file.delete() }
+        }
+    }
+}
+
+suspend fun stageCropInputUri(
+    context: Context,
+    sourceUri: Uri,
+    prefix: String = "crop_input",
+): Uri? = withContext(Dispatchers.IO) {
+    val appContext = context.applicationContext
+    val ownAuthority = "${appContext.packageName}.fileprovider"
+    if (sourceUri.scheme == ContentResolver.SCHEME_CONTENT && sourceUri.authority == ownAuthority) {
+        return@withContext sourceUri
+    }
+    if (sourceUri.scheme == ContentResolver.SCHEME_FILE && !sourceUri.path.isNullOrBlank()) {
+        val file = File(sourceUri.path!!)
+        if (file.isFile && file.length() > 0L) {
+            return@withContext createFileProviderUri(appContext, file)
+        }
+    }
+    runCatching {
+        pruneOldCropCacheFiles(appContext.cacheDir)
+        val stagedFile = File(appContext.cacheDir, "${prefix}_${System.currentTimeMillis()}.img").apply {
+            deleteOnExit()
+        }
+        appContext.contentResolver.openInputStream(sourceUri)?.use { input ->
+            FileOutputStream(stagedFile).use { output ->
+                input.copyTo(output)
+                output.flush()
+            }
+        } ?: error("Cannot open selected image")
+        check(stagedFile.isFile && stagedFile.length() > 0L) { "Staged crop image is empty" }
+        createFileProviderUri(appContext, stagedFile)
+    }.onFailure { err ->
+        Log.w("BackgroundCropActivity", "Failed to stage crop input URI: $sourceUri", err)
+    }.getOrNull()
+}
+
+suspend fun copyUriToCropOutput(
+    context: Context,
+    sourceUri: Uri,
+    outputUri: Uri,
+): Boolean = withContext(Dispatchers.IO) {
+    val appContext = context.applicationContext
+    runCatching {
+        appContext.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+            (
+                appContext.contentResolver.openOutputStream(outputUri, "wt")
+                    ?: appContext.contentResolver.openOutputStream(outputUri)
+                )?.use { outputStream ->
+                inputStream.copyTo(outputStream)
+                outputStream.flush()
+            } ?: error("Failed to open crop output stream")
+        } ?: error("Failed to open selected image")
+        true
+    }.onFailure { err ->
+        Log.w("BackgroundCropActivity", "Failed to copy crop URI $sourceUri -> $outputUri", err)
+    }.getOrDefault(false)
+}
+
 fun createBackgroundCropIntent(
     context: Context,
     sourceUri: Uri,
@@ -904,8 +991,11 @@ fun createBackgroundCropIntent(
         outputUri
     }
     return Intent(context, BackgroundCropActivity::class.java).apply {
-        // Photo Picker URIs grant read access only via data or clipData, not custom Intent extras.
-        clipData = ClipData.newRawUri("crop_input", safeSourceUri)
+        // Photo Picker URIs grant read-only access; never add FLAG_GRANT_WRITE_URI_PERMISSION
+        // when attaching a read-only input URI to clipData, otherwise ActivityTaskManager throws SecurityException.
+        if (safeSourceUri.scheme == ContentResolver.SCHEME_CONTENT) {
+            clipData = ClipData.newRawUri("crop_input", safeSourceUri)
+        }
         putExtra(UCrop.EXTRA_INPUT_URI, safeSourceUri)
         putExtra(UCrop.EXTRA_OUTPUT_URI, safeOutputUri)
         putExtra(UCrop.EXTRA_ASPECT_RATIO_X, aspectRatioX)
@@ -914,7 +1004,6 @@ fun createBackgroundCropIntent(
         if (maxSizeY > 0) putExtra(UCrop.EXTRA_MAX_SIZE_Y, maxSizeY)
         if (!title.isNullOrBlank()) putExtra(EXTRA_CROP_TITLE, title)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     }
 }
 

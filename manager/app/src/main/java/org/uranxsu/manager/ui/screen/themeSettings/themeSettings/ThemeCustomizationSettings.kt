@@ -82,10 +82,12 @@ import org.uranxsu.manager.ui.component.settings.SettingsSwitchWidget
 import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.navigation.Route
 import org.uranxsu.manager.ui.screen.LabelText
+import org.uranxsu.manager.ui.screen.themeSettings.crop.copyUriToCropOutput
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createFileProviderUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.getParcelableExtraCompat
+import org.uranxsu.manager.ui.screen.themeSettings.crop.stageCropInputUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.statusCardCropDimensions
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.CardConfig
@@ -197,60 +199,74 @@ fun HomeCustomizationSettings(
         pendingCardExternalCropUri = null
     }
 
-    val launchCardInAppCrop = { sourceUri: Uri ->
-        val outputUri = createBackgroundCropOutputUri(context, "status_card_crop")
-        val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
-        val intent = createBackgroundCropIntent(
-            context = context,
-            sourceUri = sourceUri,
-            outputUri = outputUri,
-            aspectRatioX = cardW,
-            aspectRatioY = cardH,
-            maxSizeX = 2048,
-            maxSizeY = 2048,
-            title = customCardCropTitle,
-        )
-        cropCardLauncher.launch(intent)
+    val launchCardInAppCrop: (Uri) -> Unit = { sourceUri ->
+        scope.launch {
+            val stagedUri = stageCropInputUri(context, sourceUri, "card_crop_in") ?: sourceUri
+            if (activeCardCropSourceUri == sourceUri) {
+                activeCardCropSourceUri = stagedUri
+            }
+            val outputUri = createBackgroundCropOutputUri(context, "status_card_crop")
+            val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
+            val intent = createBackgroundCropIntent(
+                context = context,
+                sourceUri = stagedUri,
+                outputUri = outputUri,
+                aspectRatioX = cardW,
+                aspectRatioY = cardH,
+                maxSizeX = 2048,
+                maxSizeY = 2048,
+                title = customCardCropTitle,
+            )
+            try {
+                cropCardLauncher.launch(intent)
+            } catch (t: Throwable) {
+                Log.e("HomeCustomization", "In-app card crop failed", t)
+                activeCardCropSourceUri = null
+                Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
-    val launchCardExternalCrop = { sourceUri: Uri ->
-        val uri = createBackgroundCropOutputUri(context, "status_card_crop_ext")
-        val copied = runCatching {
-            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                } ?: error("Failed to open external crop output")
-            } ?: error("Failed to open selected image")
-        }.isSuccess
-
-        if (!copied) {
-            Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
-            launchCardInAppCrop(sourceUri)
-        } else {
-            val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
-            val aspectX = cardW.roundToInt().coerceAtLeast(1)
-            val aspectY = cardH.roundToInt().coerceAtLeast(1)
-            val intent = Intent("com.android.camera.action.CROP").apply {
-                clipData = ClipData.newRawUri("crop_output", uri)
-                setDataAndType(uri, "image/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                putExtra("crop", "true")
-                putExtra("aspectX", aspectX)
-                putExtra("aspectY", aspectY)
-                putExtra("outputX", aspectX.coerceAtMost(2048))
-                putExtra("outputY", aspectY.coerceAtMost(2048))
-                putExtra("return-data", false)
-                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+    val launchCardExternalCrop: (Uri) -> Unit = { sourceUri ->
+        scope.launch {
+            if (activeCardCropSourceUri == sourceUri) {
+                val preserved = stageCropInputUri(context, sourceUri, "card_crop_src")
+                if (preserved != null) {
+                    activeCardCropSourceUri = preserved
+                }
             }
-            try {
-                pendingCardExternalCropUri = uri
-                externalCropCardLauncher.launch(intent)
-            } catch (t: Throwable) {
-                Log.e("HomeCustomization", "External card crop failed, fallback to in-app crop", t)
-                pendingCardExternalCropUri = null
+            val uri = createBackgroundCropOutputUri(context, "status_card_crop_ext")
+            val copied = copyUriToCropOutput(context, sourceUri, uri)
+
+            if (!copied) {
                 Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
                 launchCardInAppCrop(sourceUri)
+            } else {
+                val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
+                val aspectX = cardW.roundToInt().coerceAtLeast(1)
+                val aspectY = cardH.roundToInt().coerceAtLeast(1)
+                val intent = Intent("com.android.camera.action.CROP").apply {
+                    clipData = ClipData.newRawUri("crop_output", uri)
+                    setDataAndType(uri, "image/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    putExtra("crop", "true")
+                    putExtra("aspectX", aspectX)
+                    putExtra("aspectY", aspectY)
+                    putExtra("outputX", aspectX.coerceAtMost(2048))
+                    putExtra("outputY", aspectY.coerceAtMost(2048))
+                    putExtra("return-data", false)
+                    putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                }
+                try {
+                    pendingCardExternalCropUri = uri
+                    externalCropCardLauncher.launch(intent)
+                } catch (t: Throwable) {
+                    Log.e("HomeCustomization", "External card crop failed, fallback to in-app crop", t)
+                    pendingCardExternalCropUri = null
+                    Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
+                    launchCardInAppCrop(sourceUri)
+                }
             }
         }
     }

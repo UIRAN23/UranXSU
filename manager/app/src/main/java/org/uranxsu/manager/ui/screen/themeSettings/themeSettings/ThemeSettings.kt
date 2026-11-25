@@ -115,9 +115,11 @@ import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.screen.themeSettings.component.LanguageSelectionDialog
 import org.uranxsu.manager.ui.screen.themeSettings.component.ThemeSettingsDialogs
 import org.uranxsu.manager.ui.screen.themeSettings.crop.backgroundCropSize
+import org.uranxsu.manager.ui.screen.themeSettings.crop.copyUriToCropOutput
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createFileProviderUri
+import org.uranxsu.manager.ui.screen.themeSettings.crop.stageCropInputUri
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.BottomBarStyle
 import org.uranxsu.manager.ui.theme.CardConfig
@@ -224,64 +226,78 @@ fun ThemeSettingsScreen(
         pendingExternalCropOutputUri = null
     }
 
-    val launchInAppCrop = { sourceUri: Uri ->
-        val outputUri = createBackgroundCropOutputUri(context, "background_crop_ucrop")
-        val (screenWidth, screenHeight) = context.backgroundCropSize()
-        val intent = createBackgroundCropIntent(
-            context = context,
-            sourceUri = sourceUri,
-            outputUri = outputUri,
-            aspectRatioX = screenWidth.toFloat(),
-            aspectRatioY = screenHeight.toFloat(),
-            maxSizeX = screenWidth,
-            maxSizeY = screenHeight,
-            title = backgroundCropTitle,
-        )
-
-        uCropLauncher.launch(intent)
-    }
-
-    val launchExternalCrop = { sourceUri: Uri ->
-        val uri = createBackgroundCropOutputUri(context, "background_crop_external")
-        val copied = runCatching {
-            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
-                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                } ?: error("Failed to open external crop output")
-            } ?: error("Failed to open selected image")
-        }.isSuccess
-
-        if (!copied) {
-            Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
-            launchInAppCrop(sourceUri)
-        } else {
-            val (screenWidth, screenHeight) = context.backgroundCropSize()
-            val intent = Intent("com.android.camera.action.CROP").apply {
-                clipData = ClipData.newRawUri("crop_output", uri)
-                setDataAndType(uri, "image/*")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                putExtra("crop", "true")
-                putExtra("aspectX", screenWidth)
-                putExtra("aspectY", screenHeight)
-                putExtra("outputX", screenWidth)
-                putExtra("outputY", screenHeight)
-                putExtra("return-data", false)
-                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+    val launchInAppCrop: (Uri) -> Unit = { sourceUri ->
+        coroutineScope.launch {
+            val stagedUri = stageCropInputUri(context, sourceUri, "bg_crop_in") ?: sourceUri
+            if (activeCropSourceUri == sourceUri) {
+                activeCropSourceUri = stagedUri
             }
+            val outputUri = createBackgroundCropOutputUri(context, "background_crop_ucrop")
+            val (screenWidth, screenHeight) = context.backgroundCropSize()
+            val intent = createBackgroundCropIntent(
+                context = context,
+                sourceUri = stagedUri,
+                outputUri = outputUri,
+                aspectRatioX = screenWidth.toFloat(),
+                aspectRatioY = screenHeight.toFloat(),
+                maxSizeX = screenWidth,
+                maxSizeY = screenHeight,
+                title = backgroundCropTitle,
+            )
 
             try {
-                pendingExternalCropOutputUri = uri
-                externalCropLauncher.launch(intent)
+                uCropLauncher.launch(intent)
             } catch (t: Throwable) {
-                Log.e("ThemeSettings", "External Crop failed, fallback to in-app crop", t)
-                pendingExternalCropOutputUri = null
-                Toast.makeText(
-                    context,
-                    externalCropUnavailable,
-                    Toast.LENGTH_SHORT,
-                ).show()
+                Log.e("ThemeSettings", "In-app crop failed", t)
+                activeCropSourceUri = null
+                Toast.makeText(context, backgroundCropFailed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val launchExternalCrop: (Uri) -> Unit = { sourceUri ->
+        coroutineScope.launch {
+            if (activeCropSourceUri == sourceUri) {
+                val preserved = stageCropInputUri(context, sourceUri, "bg_crop_src")
+                if (preserved != null) {
+                    activeCropSourceUri = preserved
+                }
+            }
+            val uri = createBackgroundCropOutputUri(context, "background_crop_external")
+            val copied = copyUriToCropOutput(context, sourceUri, uri)
+
+            if (!copied) {
+                Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
                 launchInAppCrop(sourceUri)
+            } else {
+                val (screenWidth, screenHeight) = context.backgroundCropSize()
+                val intent = Intent("com.android.camera.action.CROP").apply {
+                    clipData = ClipData.newRawUri("crop_output", uri)
+                    setDataAndType(uri, "image/*")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    putExtra("crop", "true")
+                    putExtra("aspectX", screenWidth)
+                    putExtra("aspectY", screenHeight)
+                    putExtra("outputX", screenWidth)
+                    putExtra("outputY", screenHeight)
+                    putExtra("return-data", false)
+                    putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                }
+
+                try {
+                    pendingExternalCropOutputUri = uri
+                    externalCropLauncher.launch(intent)
+                } catch (t: Throwable) {
+                    Log.e("ThemeSettings", "External Crop failed, fallback to in-app crop", t)
+                    pendingExternalCropOutputUri = null
+                    Toast.makeText(
+                        context,
+                        externalCropUnavailable,
+                        Toast.LENGTH_SHORT,
+                    ).show()
+                    launchInAppCrop(sourceUri)
+                }
             }
         }
     }

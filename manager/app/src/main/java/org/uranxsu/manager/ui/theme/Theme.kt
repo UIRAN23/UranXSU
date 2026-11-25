@@ -154,6 +154,9 @@ class ThemeConfig(
         }
     var isUseBackgroundSeedColor by mutableStateOf(false)
     var bottomBarStyle by mutableStateOf(BottomBarStyle.MATERIAL3_EXPRESSIVE)
+    var backgroundVideoTransform by mutableStateOf(
+        org.uranxsu.manager.ui.component.media.VideoCropTransform.Default,
+    )
 
     fun resetBackgroundState() {
         backgroundImageLoaded = false
@@ -170,6 +173,7 @@ class ThemeConfig(
         dynamicPaletteStyle = PaletteStyle.TonalSpot
         backgroundImageLoaded = false
         isThemeChanging = false
+        backgroundVideoTransform = org.uranxsu.manager.ui.component.media.VideoCropTransform.Default
     }
 }
 
@@ -250,6 +254,54 @@ class BackgroundManager(
         settings.putBoolean("high_contrast_mode", enable)
     }
 
+    fun saveBackgroundVideoTransform(
+        transform: org.uranxsu.manager.ui.component.media.VideoCropTransform,
+    ) {
+        val sanitized = transform.sanitized()
+        config.backgroundVideoTransform = sanitized
+        settings.putFloat(KEY_BG_VIDEO_SCALE, sanitized.scale)
+        settings.putFloat(KEY_BG_VIDEO_OFFSET_X, sanitized.offsetX)
+        settings.putFloat(KEY_BG_VIDEO_OFFSET_Y, sanitized.offsetY)
+    }
+
+    suspend fun saveBackgroundSourceImage(context: Context, uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        val appContext = context.applicationContext
+        runCatching {
+            val dest = File(appContext.filesDir, SOURCE_BACKGROUND_FILE_NAME)
+            val tmpFile = File(appContext.filesDir, "$SOURCE_BACKGROUND_FILE_NAME.tmp")
+            appContext.contentResolver.openInputStream(uri)?.use { inputStream ->
+                FileOutputStream(tmpFile).use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                    outputStream.flush()
+                }
+            } ?: error("Cannot open source image")
+            check(tmpFile.isFile && tmpFile.length() > 0L) { "Source image is empty" }
+            if (!tmpFile.renameTo(dest)) {
+                tmpFile.copyTo(dest, overwrite = true)
+                tmpFile.delete()
+            }
+            true
+        }.onFailure {
+            Log.w(tag, "Failed to save original background source: ${it.message}")
+        }.getOrDefault(false)
+    }
+
+    fun getBackgroundSourceFile(context: Context): File? {
+        val appContext = context.applicationContext
+        val original = File(appContext.filesDir, SOURCE_BACKGROUND_FILE_NAME)
+        if (original.isFile) return original
+        return config.customBackgroundUri?.path?.let(::File)?.takeIf { it.isFile }
+            ?: appContext.filesDir.listFiles()?.firstOrNull {
+                it.isFile && it.name.startsWith("custom_background") && !it.name.endsWith(".tmp")
+            }
+    }
+
+    fun clearBackgroundSourceImage(context: Context) {
+        runCatching {
+            File(context.applicationContext.filesDir, SOURCE_BACKGROUND_FILE_NAME).delete()
+        }
+    }
+
     suspend fun saveAndApplyCustomBackground(
         context: Context,
         uri: Uri,
@@ -280,6 +332,11 @@ class BackgroundManager(
     fun clearCustomBackground(context: Context) {
         saveBackgroundUri(null)
         config.customBackgroundUri = null
+        saveBackgroundVideoTransform(org.uranxsu.manager.ui.component.media.VideoCropTransform.Default)
+        settings.remove(KEY_BG_VIDEO_SCALE)
+        settings.remove(KEY_BG_VIDEO_OFFSET_X)
+        settings.remove(KEY_BG_VIDEO_OFFSET_Y)
+        clearBackgroundSourceImage(context)
         cardConfig.updateBackground(false)
         clearBackgroundBlurCache(context)
         config.backgroundImageLoaded = false
@@ -300,6 +357,11 @@ class BackgroundManager(
             cardConfig.updateBackground(newUri != null)
         }
 
+        config.backgroundVideoTransform = org.uranxsu.manager.ui.component.media.VideoCropTransform(
+            scale = prefs.getFloat(KEY_BG_VIDEO_SCALE, 1f),
+            offsetX = prefs.getFloat(KEY_BG_VIDEO_OFFSET_X, 0f),
+            offsetY = prefs.getFloat(KEY_BG_VIDEO_OFFSET_Y, 0f),
+        ).sanitized()
         config.backgroundDim = prefs.getFloat("background_dim", 0f).coerceIn(0f, 1f)
         config.isEnableBlurExp = prefs.getBoolean("enable_blur_exp", false)
         config.isUseBackgroundSeedColor = prefs.getBoolean("use_background_seed_color", false)
@@ -322,6 +384,9 @@ class BackgroundManager(
     private fun copyImageToInternalStorage(context: Context, uri: Uri): Uri? {
         return try {
             val isVideo = org.uranxsu.manager.ui.component.media.isVideoUri(context, uri)
+            if (isVideo) {
+                clearBackgroundSourceImage(context)
+            }
             val ext = if (isVideo) {
                 org.uranxsu.manager.ui.component.media.resolveVideoExtension(context, uri)
             } else {
@@ -364,6 +429,13 @@ class BackgroundManager(
             Log.e(tag, "Failed to copy background media: ${e.message}", e)
             null
         }
+    }
+
+    private companion object {
+        const val SOURCE_BACKGROUND_FILE_NAME = "bg_source_original.img"
+        const val KEY_BG_VIDEO_SCALE = "custom_background_video_scale"
+        const val KEY_BG_VIDEO_OFFSET_X = "custom_background_video_offset_x"
+        const val KEY_BG_VIDEO_OFFSET_Y = "custom_background_video_offset_y"
     }
 }
 

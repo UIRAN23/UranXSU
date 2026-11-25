@@ -12,6 +12,7 @@ import android.view.Surface
 import android.view.TextureView
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -26,6 +27,48 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import java.io.File
 
 private const val TAG = "LoopingVideoBackground"
+
+@Immutable
+data class VideoCropTransform(
+    val scale: Float = 1f,
+    val offsetX: Float = 0f,
+    val offsetY: Float = 0f,
+) {
+    fun sanitized(): VideoCropTransform {
+        val safeScale = if (scale.isFinite()) scale.coerceIn(MIN_SCALE, MAX_SCALE) else MIN_SCALE
+        val safeX = if (offsetX.isFinite()) offsetX.coerceIn(-1f, 1f) else 0f
+        val safeY = if (offsetY.isFinite()) offsetY.coerceIn(-1f, 1f) else 0f
+        return VideoCropTransform(scale = safeScale, offsetX = safeX, offsetY = safeY)
+    }
+
+    companion object {
+        const val MIN_SCALE = 1f
+        const val MAX_SCALE = 4f
+        val Default = VideoCropTransform()
+    }
+}
+
+fun computeVideoOverflow(
+    viewWidth: Float,
+    viewHeight: Float,
+    mediaWidth: Float,
+    mediaHeight: Float,
+    scale: Float,
+): Pair<Float, Float> {
+    if (viewWidth <= 0f || viewHeight <= 0f || mediaWidth <= 0f || mediaHeight <= 0f) {
+        return 0f to 0f
+    }
+    val safeScale = if (scale.isFinite()) scale.coerceIn(VideoCropTransform.MIN_SCALE, VideoCropTransform.MAX_SCALE) else 1f
+    val viewAspect = viewWidth / viewHeight
+    val mediaAspect = mediaWidth / mediaHeight
+    val baseScaleX = if (mediaAspect > viewAspect) mediaAspect / viewAspect else 1f
+    val baseScaleY = if (mediaAspect > viewAspect) 1f else viewAspect / mediaAspect
+    val finalScaleX = baseScaleX * safeScale
+    val finalScaleY = baseScaleY * safeScale
+    val maxDx = (viewWidth * (finalScaleX - 1f) / 2f).coerceAtLeast(0f)
+    val maxDy = (viewHeight * (finalScaleY - 1f) / 2f).coerceAtLeast(0f)
+    return maxDx to maxDy
+}
 
 private val VIDEO_EXTENSIONS = setOf("mp4", "webm", "mkv", "mov", "avi", "3gp", "flv", "m4v")
 private val IMAGE_FTYP_BRANDS = setOf(
@@ -200,23 +243,44 @@ private class VideoPlayerHolder {
     var videoHeight: Int = 0
     var viewWidth: Int = 0
     var viewHeight: Int = 0
+    var transform: VideoCropTransform = VideoCropTransform.Default
+
+    fun updateTransform(newTransform: VideoCropTransform) {
+        val sanitized = newTransform.sanitized()
+        if (transform != sanitized) {
+            transform = sanitized
+            applyTransform()
+        }
+    }
 
     fun applyTransform() {
         val tv = textureView ?: return
         if (viewWidth <= 0 || viewHeight <= 0 || videoWidth <= 0 || videoHeight <= 0) return
 
+        val t = transform.sanitized()
         val viewAspect = viewWidth.toFloat() / viewHeight.toFloat()
         val videoAspect = videoWidth.toFloat() / videoHeight.toFloat()
-        var scaleX = 1f
-        var scaleY = 1f
+        var baseScaleX = 1f
+        var baseScaleY = 1f
         if (videoAspect > viewAspect) {
-            scaleX = videoAspect / viewAspect
+            baseScaleX = videoAspect / viewAspect
         } else {
-            scaleY = viewAspect / videoAspect
+            baseScaleY = viewAspect / videoAspect
         }
 
+        val finalScaleX = baseScaleX * t.scale
+        val finalScaleY = baseScaleY * t.scale
+        val (maxDx, maxDy) = computeVideoOverflow(
+            viewWidth = viewWidth.toFloat(),
+            viewHeight = viewHeight.toFloat(),
+            mediaWidth = videoWidth.toFloat(),
+            mediaHeight = videoHeight.toFloat(),
+            scale = t.scale,
+        )
+
         val matrix = Matrix().apply {
-            setScale(scaleX, scaleY, viewWidth / 2f, viewHeight / 2f)
+            setScale(finalScaleX, finalScaleY, viewWidth / 2f, viewHeight / 2f)
+            postTranslate(t.offsetX * maxDx, t.offsetY * maxDy)
         }
         tv.setTransform(matrix)
     }
@@ -262,11 +326,16 @@ fun LoopingVideoBackground(
     modifier: Modifier = Modifier,
     isMuted: Boolean = true,
     isActive: Boolean = true,
+    transform: VideoCropTransform = VideoCropTransform.Default,
+    onVideoSizeChanged: ((Int, Int) -> Unit)? = null,
+    onError: (() -> Unit)? = null,
 ) {
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentIsActive by rememberUpdatedState(isActive)
     val currentIsMuted by rememberUpdatedState(isMuted)
+    val currentTransform by rememberUpdatedState(transform.sanitized())
+    val currentOnVideoSizeChanged by rememberUpdatedState(onVideoSizeChanged)
+    val currentOnError by rememberUpdatedState(onError)
 
     key(videoUri) {
         val holder = remember(videoUri) { VideoPlayerHolder() }
@@ -277,6 +346,10 @@ fun LoopingVideoBackground(
             } else {
                 holder.pauseIfReady()
             }
+        }
+
+        LaunchedEffect(currentTransform) {
+            holder.updateTransform(currentTransform)
         }
 
         DisposableEffect(lifecycleOwner, holder) {
@@ -298,6 +371,7 @@ fun LoopingVideoBackground(
             factory = { ctx ->
                 TextureView(ctx).apply {
                     holder.textureView = this
+                    holder.transform = currentTransform
                     surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                         override fun onSurfaceTextureAvailable(
                             surfaceTexture: SurfaceTexture,
@@ -308,12 +382,19 @@ fun LoopingVideoBackground(
                             holder.isReleased = false
                             holder.viewWidth = width
                             holder.viewHeight = height
+                            holder.transform = currentTransform
                             val surface = Surface(surfaceTexture)
                             holder.surface = surface
                             try {
                                 val mp = MediaPlayer().apply {
                                     setSurface(surface)
-                                    setDataSource(ctx, videoUri)
+                                    setVideoScalingMode(MediaPlayer.VIDEO_SCALING_MODE_SCALE_TO_FIT)
+                                    val filePath = videoUri.path?.takeIf { videoUri.scheme == "file" }
+                                    if (filePath != null) {
+                                        setDataSource(filePath)
+                                    } else {
+                                        setDataSource(ctx, videoUri)
+                                    }
                                     isLooping = true
                                     if (currentIsMuted) {
                                         setVolume(0f, 0f)
@@ -322,6 +403,9 @@ fun LoopingVideoBackground(
                                         holder.videoWidth = vw
                                         holder.videoHeight = vh
                                         holder.applyTransform()
+                                        if (vw > 0 && vh > 0) {
+                                            currentOnVideoSizeChanged?.invoke(vw, vh)
+                                        }
                                     }
                                     setOnPreparedListener { player ->
                                         if (holder.isReleased) return@setOnPreparedListener
@@ -329,6 +413,9 @@ fun LoopingVideoBackground(
                                         holder.videoWidth = player.videoWidth
                                         holder.videoHeight = player.videoHeight
                                         holder.applyTransform()
+                                        if (player.videoWidth > 0 && player.videoHeight > 0) {
+                                            currentOnVideoSizeChanged?.invoke(player.videoWidth, player.videoHeight)
+                                        }
                                         if (currentIsMuted) {
                                             player.setVolume(0f, 0f)
                                         }
@@ -348,6 +435,7 @@ fun LoopingVideoBackground(
                                     }
                                     setOnErrorListener { _, what, extra ->
                                         Log.w(TAG, "MediaPlayer error: what=$what, extra=$extra")
+                                        currentOnError?.invoke()
                                         true
                                     }
                                     prepareAsync()
@@ -356,6 +444,7 @@ fun LoopingVideoBackground(
                             } catch (e: Exception) {
                                 Log.e(TAG, "Failed to initialize MediaPlayer for $videoUri", e)
                                 holder.release()
+                                currentOnError?.invoke()
                             }
                         }
 
@@ -379,6 +468,9 @@ fun LoopingVideoBackground(
                 }
             },
             modifier = modifier,
+            update = {
+                holder.updateTransform(currentTransform)
+            },
             onRelease = {
                 holder.textureView = null
                 holder.release()

@@ -896,4 +896,16 @@
     <string name="theme_import_part_texts">Пользовательские тексты</string>
     <string name="theme_import_adaptive_hint">Обнаружена адаптивная тема: будет применён вариант под текущую светлую или тёмную тему.</string>
     <string name="theme_import_apply">Применить выбранное</string>
+    <string name="crop_ratio_target">По формату</string>
+    <string name="crop_ratio_free">Свободно</string>
+    <string name="crop_rotate_90">Повернуть на 90°</string>
+    <string name="crop_use_original">Оригинал</string>
+    <string name="crop_adjust_title">Настроить кадрирование</string>
+    <string name="crop_adjust_photo_summary">Перекадрировать текущее изображение</string>
+    <string name="crop_adjust_video_summary">Настроить масштаб и положение видео</string>
+    <string name="video_crop_title">Кадрирование видео</string>
+    <string name="video_crop_hint">Сведите или разведите пальцы для масштаба и перетащите видео</string>
+    <string name="video_crop_zoom">Масштаб</string>
+    <string name="video_crop_load_failed">Предпросмотр видео недоступен, параметры всё равно сохранятся</string>
+    <string name="module_banner_crop">Кадрировать</string>
 </resources>

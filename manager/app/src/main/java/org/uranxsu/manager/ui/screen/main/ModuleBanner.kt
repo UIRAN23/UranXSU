@@ -37,8 +37,10 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.koin.compose.koinInject
+import org.uranxsu.manager.data.AppSettingsRepository
 import org.uranxsu.manager.data.shell.KsuCliRepository
 import org.uranxsu.manager.domain.model.InstalledModule
+import org.uranxsu.manager.ui.component.media.VideoCropTransform
 import org.uranxsu.manager.ui.component.media.isVideoPath
 import org.uranxsu.manager.ui.component.media.isVideoUri
 import org.uranxsu.manager.ui.component.media.resolveVideoExtension
@@ -57,9 +59,42 @@ private val MODULE_ROOTS = listOf("/data/adb/modules", "/data/adb/modules_update
 private val bannerCache = LruCache<String, ImageBitmap>(32)
 private val bannerRevision = mutableIntStateOf(0)
 
+fun moduleBannerRevision(): Int = bannerRevision.intValue
+
 fun invalidateModuleBanner(moduleId: String) {
     Log.d(TAG, "invalidate banner cache for $moduleId")
     bannerCache.evictAll()
+    bannerRevision.intValue++
+}
+
+fun getModuleBannerVideoTransform(
+    settings: AppSettingsRepository,
+    moduleId: String,
+): VideoCropTransform = VideoCropTransform(
+    scale = settings.getFloat("module_banner_video_scale_$moduleId", 1f),
+    offsetX = settings.getFloat("module_banner_video_offset_x_$moduleId", 0f),
+    offsetY = settings.getFloat("module_banner_video_offset_y_$moduleId", 0f),
+).sanitized()
+
+fun saveModuleBannerVideoTransform(
+    settings: AppSettingsRepository,
+    moduleId: String,
+    transform: VideoCropTransform,
+) {
+    val sanitized = transform.sanitized()
+    settings.putFloat("module_banner_video_scale_$moduleId", sanitized.scale)
+    settings.putFloat("module_banner_video_offset_x_$moduleId", sanitized.offsetX)
+    settings.putFloat("module_banner_video_offset_y_$moduleId", sanitized.offsetY)
+    bannerRevision.intValue++
+}
+
+fun clearModuleBannerVideoTransform(
+    settings: AppSettingsRepository,
+    moduleId: String,
+) {
+    settings.remove("module_banner_video_scale_$moduleId")
+    settings.remove("module_banner_video_offset_x_$moduleId")
+    settings.remove("module_banner_video_offset_y_$moduleId")
     bannerRevision.intValue++
 }
 
@@ -208,6 +243,35 @@ fun Modifier.moduleBanner(banner: ImageBitmap?, scrim: Color): Modifier {
 
 object ModuleBannerEditor {
     fun isCustomBanner(module: InstalledModule): Boolean = module.bannerPath?.substringAfterLast('/')?.startsWith(CUSTOM_BANNER_PREFIX) == true
+
+    fun extractBannerToCache(
+        context: Context,
+        shell: Shell,
+        module: InstalledModule,
+    ): File? = runCatching {
+        val banner = module.bannerPath?.takeIf { it.isNotBlank() } ?: return@runCatching null
+        if (banner.startsWith("http://", true) || banner.startsWith("https://", true)) return@runCatching null
+        if (banner.split('/').contains("..")) return@runCatching null
+        val candidates = if (banner.startsWith("/")) {
+            listOf(banner).filter { it.startsWith(MODULE_DIR) || it.startsWith(MODULE_UPDATE_DIR) }
+        } else {
+            listOf("$MODULE_DIR${module.dirId}/$banner", "$MODULE_UPDATE_DIR${module.dirId}/$banner")
+        }
+        val chosen = candidates
+            .map { SuFile(it).apply { this.shell = shell } }
+            .firstOrNull { it.isFile } ?: return@runCatching null
+        val bannerName = banner.substringAfterLast('/')
+        val outFile = File(context.cacheDir, "re_crop_banner_${module.dirId}_${System.currentTimeMillis()}_$bannerName")
+        SuFileInputStream.open(chosen).use { input ->
+            outFile.outputStream().use { output ->
+                input.copyTo(output)
+                output.flush()
+            }
+        }
+        outFile.takeIf { it.isFile && it.length() > 0L }
+    }.onFailure {
+        Log.w(TAG, "extractBannerToCache for ${module.dirId} failed", it)
+    }.getOrNull()
 
     fun import(
         context: Context,

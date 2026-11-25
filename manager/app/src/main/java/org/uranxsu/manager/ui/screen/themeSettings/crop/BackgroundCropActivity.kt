@@ -3,6 +3,7 @@ package org.uranxsu.manager.ui.screen.themeSettings.crop
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ClipData
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -29,18 +30,23 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.twotone.RotateRight
 import androidx.compose.material.icons.twotone.Check
 import androidx.compose.material.icons.twotone.Close
 import androidx.compose.material.icons.twotone.RestartAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -50,6 +56,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -57,6 +65,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -73,17 +82,33 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.core.content.FileProvider
 import com.yalantis.ucrop.UCrop
 import com.yalantis.ucrop.callback.BitmapCropCallback
+import com.yalantis.ucrop.view.CropImageView
 import com.yalantis.ucrop.view.OverlayView
 import com.yalantis.ucrop.view.TransformImageView
 import com.yalantis.ucrop.view.UCropView
 import java.io.File
+import java.io.FileOutputStream
 import java.io.Serializable
 import kotlin.math.max
 import kotlin.math.min
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.uranxsu.manager.R
 import org.uranxsu.manager.ui.component.KeyPointSlider
 import org.uranxsu.manager.ui.theme.KernelSUTheme
 import org.uranxsu.manager.ui.util.adaptiveScaffoldWindowInsets
+
+const val EXTRA_CROP_TITLE = "org.uranxsu.manager.extra.CROP_TITLE"
+
+private enum class CropAspectOption {
+    TARGET,
+    FREE,
+    RATIO_16_9,
+    RATIO_4_3,
+    RATIO_1_1,
+    RATIO_9_16,
+}
 
 class BackgroundCropActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -96,13 +121,12 @@ class BackgroundCropActivity : ComponentActivity() {
         val aspectRatioY = intent.getFloatExtra(UCrop.EXTRA_ASPECT_RATIO_Y, 0f)
         val maxSizeX = intent.getIntExtra(UCrop.EXTRA_MAX_SIZE_X, 0)
         val maxSizeY = intent.getIntExtra(UCrop.EXTRA_MAX_SIZE_Y, 0)
+        val customTitle = intent.getStringExtra(EXTRA_CROP_TITLE)?.takeIf { it.isNotBlank() }
 
         if (inputUri == null || outputUri == null) {
             finishWithError(IllegalArgumentException("Crop input or output Uri is missing."))
             return
         }
-
-        val sourceImageAspectRatio = resolveImageAspectRatio(inputUri)
 
         setContent {
             KernelSUTheme {
@@ -111,9 +135,9 @@ class BackgroundCropActivity : ComponentActivity() {
                     outputUri = outputUri,
                     aspectRatioX = aspectRatioX,
                     aspectRatioY = aspectRatioY,
-                    sourceImageAspectRatio = sourceImageAspectRatio,
                     maxSizeX = maxSizeX,
                     maxSizeY = maxSizeY,
+                    customTitle = customTitle,
                     onCancel = {
                         setResult(RESULT_CANCELED)
                         finish()
@@ -149,24 +173,6 @@ class BackgroundCropActivity : ComponentActivity() {
         setResult(UCrop.RESULT_ERROR, result)
         finish()
     }
-
-    private fun resolveImageAspectRatio(uri: Uri): Float? {
-        val options = BitmapFactory.Options().apply {
-            inJustDecodeBounds = true
-        }
-        return runCatching {
-            contentResolver.openInputStream(uri)?.use { inputStream ->
-                BitmapFactory.decodeStream(inputStream, null, options)
-            }
-            val width = options.outWidth
-            val height = options.outHeight
-            if (width > 0 && height > 0) {
-                width.toFloat() / height.toFloat()
-            } else {
-                null
-            }
-        }.getOrNull()
-    }
 }
 
 @SuppressLint("AutoboxingStateCreation")
@@ -177,19 +183,41 @@ private fun BackgroundCropScreen(
     outputUri: Uri,
     aspectRatioX: Float,
     aspectRatioY: Float,
-    sourceImageAspectRatio: Float?,
     maxSizeX: Int,
     maxSizeY: Int,
+    customTitle: String?,
     onCancel: () -> Unit,
     onCropped: (Uri, Int, Int, Int, Int) -> Unit,
     onError: (Throwable) -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val hasInitialTarget = aspectRatioX > 0f && aspectRatioY > 0f
+    val initialAspectRatio = remember(aspectRatioX, aspectRatioY) {
+        if (hasInitialTarget) aspectRatioX / aspectRatioY else null
+    }
+    val initialAspectOption = remember(hasInitialTarget) {
+        if (hasInitialTarget) CropAspectOption.TARGET else CropAspectOption.FREE
+    }
+    val availableOptions = remember(hasInitialTarget) {
+        buildList {
+            if (hasInitialTarget) add(CropAspectOption.TARGET)
+            add(CropAspectOption.FREE)
+            add(CropAspectOption.RATIO_16_9)
+            add(CropAspectOption.RATIO_4_3)
+            add(CropAspectOption.RATIO_1_1)
+            add(CropAspectOption.RATIO_9_16)
+        }
+    }
+
+    var stagedInputFile by remember(inputUri) { mutableStateOf<File?>(null) }
+    var stagingError by remember(inputUri) { mutableStateOf<Throwable?>(null) }
     var cropView by remember { mutableStateOf<UCropView?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isCropping by remember { mutableStateOf(false) }
     var loadFailed by remember { mutableStateOf(false) }
     var rotationAngle by remember { mutableFloatStateOf(0f) }
+    var selectedAspect by remember(initialAspectOption) { mutableStateOf(initialAspectOption) }
     var cropViewReloadToken by remember { mutableIntStateOf(0) }
     val topAppBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
@@ -197,6 +225,76 @@ private fun BackgroundCropScreen(
     val primaryColor = MaterialTheme.colorScheme.primary.toArgb()
     val onSurfaceColor = MaterialTheme.colorScheme.onSurface.toArgb()
     val scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.58f).toArgb()
+
+    // Stage content:// / picker URIs into an app-local file distinct from localOutputFile so
+    // uCrop 2.2.11 never overwrites or 0-byte-truncates its own input when mOutputUri == mInputUri.
+    LaunchedEffect(inputUri) {
+        val result = withContext(Dispatchers.IO) {
+            runCatching {
+                val staged = File(context.cacheDir, "crop_src_${System.currentTimeMillis()}.img")
+                context.contentResolver.openInputStream(inputUri)?.use { input ->
+                    FileOutputStream(staged).use { output ->
+                        input.copyTo(output)
+                        output.flush()
+                    }
+                } ?: error("Cannot open selected image")
+                check(staged.isFile && staged.length() > 0L) { "Selected image is empty" }
+                staged
+            }
+        }
+        result.onSuccess { file ->
+            stagedInputFile = file
+        }.onFailure { err ->
+            stagingError = err
+            isLoading = false
+            loadFailed = true
+            onError(err)
+        }
+    }
+
+    val localOutputFile = remember(outputUri) {
+        if (outputUri.scheme == "file" && !outputUri.path.isNullOrBlank()) {
+            File(outputUri.path!!)
+        } else {
+            File(context.cacheDir, "crop_work_out_${System.currentTimeMillis()}.jpg")
+        }
+    }
+    val localOutputUri = remember(localOutputFile) { Uri.fromFile(localOutputFile) }
+
+    DisposableEffect(inputUri) {
+        onDispose {
+            stagedInputFile?.let { file ->
+                runCatching { file.delete() }
+            }
+            if (outputUri != localOutputUri) {
+                runCatching { localOutputFile.delete() }
+            }
+        }
+    }
+
+    fun ratioForOption(option: CropAspectOption): Float? = when (option) {
+        CropAspectOption.TARGET -> initialAspectRatio
+        CropAspectOption.FREE -> null
+        CropAspectOption.RATIO_16_9 -> 16f / 9f
+        CropAspectOption.RATIO_4_3 -> 4f / 3f
+        CropAspectOption.RATIO_1_1 -> 1f
+        CropAspectOption.RATIO_9_16 -> 9f / 16f
+    }
+
+    fun applyAspectOption(view: UCropView, option: CropAspectOption) {
+        val ratio = ratioForOption(option)
+        if (ratio != null && ratio.isFinite() && ratio > 0f) {
+            view.cropImageView.setTargetAspectRatio(ratio)
+            view.overlayView.setTargetAspectRatio(ratio)
+            view.overlayView.setFreestyleCropMode(OverlayView.FREESTYLE_CROP_MODE_ENABLE)
+            view.overlayView.setAspectLockedCornerResize(ratio)
+        } else {
+            view.overlayView.setOnTouchListener(null)
+            view.overlayView.setFreestyleCropMode(OverlayView.FREESTYLE_CROP_MODE_ENABLE)
+            view.cropImageView.setTargetAspectRatio(CropImageView.SOURCE_IMAGE_ASPECT_RATIO)
+        }
+        view.cropImageView.setImageToWrapCropBounds(true)
+    }
 
     fun syncCropControls() {
         cropView?.cropImageView?.let { imageView ->
@@ -224,13 +322,30 @@ private fun BackgroundCropScreen(
         topAppBarState.contentOffset = 0f
     }
 
+    suspend fun deliverOutputFile(croppedLocalUri: Uri, width: Int, height: Int, offsetX: Int, offsetY: Int) {
+        val finalUri = withContext(Dispatchers.IO) {
+            if (outputUri != localOutputUri) {
+                context.contentResolver.openOutputStream(outputUri, "rwt")?.use { dest ->
+                    localOutputFile.inputStream().use { src ->
+                        src.copyTo(dest)
+                        dest.flush()
+                    }
+                } ?: error("Failed to write cropped output")
+                outputUri
+            } else {
+                croppedLocalUri
+            }
+        }
+        onCropped(finalUri, width, height, offsetX, offsetY)
+    }
+
     fun cropCurrentImage() {
         val imageView = cropView?.cropImageView ?: return
         isCropping = true
         imageView.setImageToWrapCropBounds()
         imageView.cropAndSaveImage(
             Bitmap.CompressFormat.JPEG,
-            90,
+            92,
             object : BitmapCropCallback {
                 override fun onBitmapCropped(
                     resultUri: Uri,
@@ -239,9 +354,13 @@ private fun BackgroundCropScreen(
                     imageWidth: Int,
                     imageHeight: Int,
                 ) {
-                    (context as Activity).runOnUiThread {
-                        isCropping = false
-                        onCropped(resultUri, imageWidth, imageHeight, offsetX, offsetY)
+                    scope.launch {
+                        runCatching {
+                            deliverOutputFile(resultUri, imageWidth, imageHeight, offsetX, offsetY)
+                        }.onFailure { err ->
+                            isCropping = false
+                            onError(err)
+                        }
                     }
                 }
 
@@ -255,11 +374,35 @@ private fun BackgroundCropScreen(
         )
     }
 
+    fun useOriginalImage() {
+        val src = stagedInputFile ?: return
+        isCropping = true
+        scope.launch {
+            runCatching {
+                val (w, h) = withContext(Dispatchers.IO) {
+                    src.inputStream().use { input ->
+                        FileOutputStream(localOutputFile).use { output ->
+                            input.copyTo(output)
+                            output.flush()
+                        }
+                    }
+                    val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(localOutputFile.absolutePath, opts)
+                    opts.outWidth.coerceAtLeast(1) to opts.outHeight.coerceAtLeast(1)
+                }
+                deliverOutputFile(localOutputUri, w, h, 0, 0)
+            }.onFailure { err ->
+                isCropping = false
+                onError(err)
+            }
+        }
+    }
+
     Scaffold(
         contentWindowInsets = adaptiveScaffoldWindowInsets(),
         topBar = {
             LargeFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.background_crop_title)) },
+                title = { Text(customTitle ?: stringResource(R.string.background_crop_title)) },
                 navigationIcon = {
                     CropTooltipIconButton(
                         tooltip = stringResource(R.string.cancel),
@@ -274,12 +417,26 @@ private fun BackgroundCropScreen(
                 },
                 actions = {
                     CropTooltipIconButton(
+                        tooltip = stringResource(R.string.crop_rotate_90),
+                        onClick = {
+                            updateRotation(rotationAngle + 90f)
+                            finishRotationAdjustment()
+                        },
+                        enabled = !isLoading && !isCropping && !loadFailed,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.TwoTone.RotateRight,
+                            contentDescription = stringResource(R.string.crop_rotate_90),
+                        )
+                    }
+                    CropTooltipIconButton(
                         tooltip = stringResource(R.string.background_crop_reset),
                         onClick = {
                             cropView = null
                             isLoading = true
                             loadFailed = false
                             rotationAngle = 0f
+                            selectedAspect = initialAspectOption
                             cropViewReloadToken++
                         },
                         enabled = !isLoading && !isCropping && !loadFailed,
@@ -311,6 +468,31 @@ private fun BackgroundCropScreen(
                         .navigationBarsPadding()
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(availableOptions) { option ->
+                            val label = when (option) {
+                                CropAspectOption.TARGET -> stringResource(R.string.crop_ratio_target)
+                                CropAspectOption.FREE -> stringResource(R.string.crop_ratio_free)
+                                CropAspectOption.RATIO_16_9 -> "16:9"
+                                CropAspectOption.RATIO_4_3 -> "4:3"
+                                CropAspectOption.RATIO_1_1 -> "1:1"
+                                CropAspectOption.RATIO_9_16 -> "9:16"
+                            }
+                            FilterChip(
+                                selected = selectedAspect == option,
+                                enabled = !isLoading && !isCropping && !loadFailed,
+                                onClick = {
+                                    selectedAspect = option
+                                    cropView?.let { applyAspectOption(it, option) }
+                                },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -348,9 +530,15 @@ private fun BackgroundCropScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        OutlinedButton(
+                            onClick = ::useOriginalImage,
+                            enabled = stagedInputFile != null && !isLoading && !isCropping && !loadFailed,
+                        ) {
+                            Text(text = stringResource(R.string.crop_use_original))
+                        }
                         Button(
                             onClick = ::cropCurrentImage,
                             enabled = !isLoading && !isCropping && !loadFailed,
@@ -375,80 +563,79 @@ private fun BackgroundCropScreen(
                 .fillMaxSize()
                 .padding(paddingValues),
         ) {
-            key(cropViewReloadToken) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { viewContext ->
-                        UCropView(viewContext, null).apply {
-                            layoutParams = FrameLayout.LayoutParams(
-                                FrameLayout.LayoutParams.MATCH_PARENT,
-                                FrameLayout.LayoutParams.MATCH_PARENT,
-                            )
-                            cropImageView.isScaleEnabled = true
-                            cropImageView.isRotateEnabled = false
-                            cropImageView.isGestureEnabled = true
-                            cropImageView.doubleTapScaleSteps = 5
-                            cropImageView.setMaxScaleMultiplier(10f)
-                            val cropAspectRatio = if (aspectRatioX > 0f && aspectRatioY > 0f) {
-                                aspectRatioX / aspectRatioY
-                            } else {
-                                null
-                            }
-                            if (aspectRatioX > 0f && aspectRatioY > 0f) {
-                                cropAspectRatio?.let {
-                                    cropImageView.setTargetAspectRatio(it)
-                                    overlayView.setTargetAspectRatio(it)
+            val localInputUri = remember(stagedInputFile) { stagedInputFile?.let(Uri::fromFile) }
+            if (localInputUri != null && stagingError == null) {
+                key(localInputUri, cropViewReloadToken) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { viewContext ->
+                            UCropView(viewContext, null).apply {
+                                layoutParams = FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                )
+                                cropImageView.isScaleEnabled = true
+                                cropImageView.isRotateEnabled = false
+                                cropImageView.isGestureEnabled = true
+                                cropImageView.doubleTapScaleSteps = 5
+                                cropImageView.setMaxScaleMultiplier(10f)
+                                val cropAspectRatio = ratioForOption(selectedAspect)
+                                if (cropAspectRatio != null && cropAspectRatio > 0f) {
+                                    cropImageView.setTargetAspectRatio(cropAspectRatio)
+                                    overlayView.setTargetAspectRatio(cropAspectRatio)
+                                    overlayView.setAspectLockedCornerResize(cropAspectRatio)
+                                } else {
+                                    cropImageView.setTargetAspectRatio(CropImageView.SOURCE_IMAGE_ASPECT_RATIO)
+                                }
+                                if (maxSizeX > 0) cropImageView.setMaxResultImageSizeX(maxSizeX)
+                                if (maxSizeY > 0) cropImageView.setMaxResultImageSizeY(maxSizeY)
+                                overlayView.setShowCropFrame(true)
+                                overlayView.setShowCropGrid(true)
+                                overlayView.setFreestyleCropMode(OverlayView.FREESTYLE_CROP_MODE_ENABLE)
+                                overlayView.setCropFrameColor(primaryColor)
+                                overlayView.setCropGridColor(onSurfaceColor)
+                                overlayView.setDimmedColor(scrimColor)
+                                cropImageView.setTransformImageListener(
+                                    object : TransformImageView.TransformImageListener {
+                                        override fun onLoadComplete() {
+                                            isLoading = false
+                                            loadFailed = false
+                                            syncCropControls()
+                                        }
+
+                                        override fun onLoadFailure(e: Exception) {
+                                            isLoading = false
+                                            loadFailed = true
+                                            onError(e)
+                                        }
+
+                                        override fun onRotate(currentAngle: Float) {
+                                            rotationAngle = currentAngle.normalizedCropAngle()
+                                        }
+
+                                        override fun onScale(currentScale: Float) = Unit
+                                    },
+                                )
+                                cropView = this
+                                runCatching {
+                                    cropImageView.setImageUri(localInputUri, localOutputUri)
+                                }.onFailure {
+                                    visibility = View.INVISIBLE
+                                    isLoading = false
+                                    loadFailed = true
+                                    onError(it)
                                 }
                             }
-                            if (maxSizeX > 0) cropImageView.setMaxResultImageSizeX(maxSizeX)
-                            if (maxSizeY > 0) cropImageView.setMaxResultImageSizeY(maxSizeY)
-                            overlayView.setShowCropFrame(true)
-                            overlayView.setShowCropGrid(true)
-                            overlayView.setFreestyleCropMode(OverlayView.FREESTYLE_CROP_MODE_ENABLE)
-                            cropAspectRatio?.let(overlayView::setAspectLockedCornerResize)
-                            overlayView.setCropFrameColor(primaryColor)
-                            overlayView.setCropGridColor(onSurfaceColor)
-                            overlayView.setDimmedColor(scrimColor)
-                            cropImageView.setTransformImageListener(
-                                object : TransformImageView.TransformImageListener {
-                                    override fun onLoadComplete() {
-                                        isLoading = false
-                                        loadFailed = false
-                                        syncCropControls()
-                                    }
-
-                                    override fun onLoadFailure(e: Exception) {
-                                        isLoading = false
-                                        loadFailed = true
-                                        onError(e)
-                                    }
-
-                                    override fun onRotate(currentAngle: Float) {
-                                        rotationAngle = currentAngle.normalizedCropAngle()
-                                    }
-
-                                    override fun onScale(currentScale: Float) = Unit
-                                },
-                            )
-                            cropView = this
-                            runCatching {
-                                cropImageView.setImageUri(inputUri, outputUri)
-                            }.onFailure {
-                                visibility = View.INVISIBLE
-                                isLoading = false
-                                loadFailed = true
-                                onError(it)
-                            }
-                        }
-                    },
-                    update = {
-                        it.visibility =
-                            if (isLoading || loadFailed) View.INVISIBLE else View.VISIBLE
-                        it.overlayView.setCropFrameColor(primaryColor)
-                        it.overlayView.setCropGridColor(onSurfaceColor)
-                        it.overlayView.setDimmedColor(scrimColor)
-                    },
-                )
+                        },
+                        update = {
+                            it.visibility =
+                                if (isLoading || loadFailed) View.INVISIBLE else View.VISIBLE
+                            it.overlayView.setCropFrameColor(primaryColor)
+                            it.overlayView.setCropGridColor(onSurfaceColor)
+                            it.overlayView.setDimmedColor(scrimColor)
+                        },
+                    )
+                }
             }
 
             if (isLoading || isCropping) {
@@ -688,7 +875,17 @@ private class BelowAnchorTooltipPositionProvider : PopupPositionProvider {
     }
 }
 
-fun createBackgroundCropOutputUri(context: android.content.Context, prefix: String = "crop"): Uri {
+fun createInternalCropOutputUri(context: Context, prefix: String = "crop"): Uri {
+    val outputFile = File(context.cacheDir, "${prefix}_${System.currentTimeMillis()}.jpg").apply {
+        parentFile?.mkdirs()
+        delete()
+        createNewFile()
+        deleteOnExit()
+    }
+    return Uri.fromFile(outputFile)
+}
+
+fun createBackgroundCropOutputUri(context: Context, prefix: String = "crop"): Uri {
     val outputFile = File(context.cacheDir, "${prefix}_${System.currentTimeMillis()}.jpg").apply {
         parentFile?.mkdirs()
         delete()
@@ -704,13 +901,14 @@ fun createBackgroundCropOutputUri(context: android.content.Context, prefix: Stri
 }
 
 fun createBackgroundCropIntent(
-    context: android.content.Context,
+    context: Context,
     sourceUri: Uri,
     outputUri: Uri,
     aspectRatioX: Float,
     aspectRatioY: Float,
     maxSizeX: Int = 0,
     maxSizeY: Int = 0,
+    title: String? = null,
 ): Intent = Intent(context, BackgroundCropActivity::class.java).apply {
     // Photo Picker URIs grant read access only via data or clipData, not custom Intent extras.
     clipData = ClipData.newRawUri("crop_input", sourceUri)
@@ -720,13 +918,21 @@ fun createBackgroundCropIntent(
     putExtra(UCrop.EXTRA_ASPECT_RATIO_Y, aspectRatioY)
     if (maxSizeX > 0) putExtra(UCrop.EXTRA_MAX_SIZE_X, maxSizeX)
     if (maxSizeY > 0) putExtra(UCrop.EXTRA_MAX_SIZE_Y, maxSizeY)
+    if (!title.isNullOrBlank()) putExtra(EXTRA_CROP_TITLE, title)
     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
 }
 
-fun android.content.Context.backgroundCropSize(): Pair<Int, Int> {
+fun Context.backgroundCropSize(): Pair<Int, Int> {
     val displayMetrics = resources.displayMetrics
     return displayMetrics.widthPixels to displayMetrics.heightPixels
+}
+
+fun Context.statusCardCropDimensions(cardHeightDp: Int): Pair<Float, Float> {
+    val dm = resources.displayMetrics
+    val widthPx = (dm.widthPixels - 32f * dm.density).coerceAtLeast(100f)
+    val heightPx = (cardHeightDp * dm.density).coerceAtLeast(80f)
+    return widthPx to heightPx
 }
 
 inline fun <reified T> Intent.getParcelableExtraCompat(name: String): T? = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {

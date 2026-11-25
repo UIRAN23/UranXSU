@@ -1,7 +1,11 @@
 package org.uranxsu.manager.ui.screen.themeSettings
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.Intent
 import android.net.Uri
+import android.provider.MediaStore
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -21,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.twotone.Android
 import androidx.compose.material.icons.twotone.Brush
+import androidx.compose.material.icons.twotone.Crop
 import androidx.compose.material.icons.twotone.Delete
 import androidx.compose.material.icons.twotone.Download
 import androidx.compose.material.icons.twotone.Edit
@@ -56,19 +61,24 @@ import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import org.uranxsu.manager.R
 import org.uranxsu.manager.ui.component.KeyPointSlider
+import org.uranxsu.manager.ui.component.media.VideoCropTransform
 import org.uranxsu.manager.ui.component.media.isVideoFile
 import org.uranxsu.manager.ui.component.media.isVideoUri
 import org.uranxsu.manager.ui.component.settings.SegmentedColumn
 import org.uranxsu.manager.ui.component.settings.SettingsBaseWidget
+import org.uranxsu.manager.ui.component.settings.SettingsChooseDialog
 import org.uranxsu.manager.ui.component.settings.SettingsChooseWidget
 import org.uranxsu.manager.ui.component.settings.SettingsJumpPageWidget
 import org.uranxsu.manager.ui.component.settings.SettingsSwitchWidget
 import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.navigation.Route
-import org.uranxsu.manager.ui.screen.themeSettings.crop.backgroundCropSize
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createInternalCropOutputUri
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createVideoCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.getParcelableExtraCompat
+import org.uranxsu.manager.ui.screen.themeSettings.crop.parseVideoCropResult
+import org.uranxsu.manager.ui.screen.themeSettings.crop.statusCardCropDimensions
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.CardConfig
 import org.uranxsu.manager.ui.theme.HomeCustomizationConfig
@@ -116,21 +126,138 @@ fun HomeCustomizationSettings() {
     val scope = rememberCoroutineScope()
     val home: HomeCustomizationConfig = koinInject()
     val failedMsg = stringResource(R.string.background_crop_failed)
+    val externalCropUnavailable = stringResource(R.string.background_external_crop_unavailable)
+    val customCardCropTitle = stringResource(R.string.custom_card_crop_title)
+
+    var pendingCardPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingCardPickedSourceUri by remember { mutableStateOf<Uri?>(null) }
+    var activeCardCropSourceUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingCardExternalCropUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingCardVideoIsReframe by remember { mutableStateOf(false) }
+    var showCardCropMethodDialog by remember { mutableStateOf(false) }
+
+    fun commitCardCroppedPhoto(outputUri: Uri) {
+        val originalSource = activeCardCropSourceUri
+        activeCardCropSourceUri = null
+        home.updateStatusCardVideoTransform(VideoCropTransform.Default)
+        scope.launch {
+            if (originalSource != null) {
+                home.saveStatusCardSourceImage(context, originalSource)
+            }
+            if (!home.saveStatusCardImage(context, outputUri)) {
+                Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     val cropCardLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val outputUri = result.data?.getParcelableExtraCompat<Uri>(UCrop.EXTRA_OUTPUT_URI)
-            outputUri?.let { uri ->
-                scope.launch {
-                    if (!home.saveStatusCardImage(context, uri)) {
-                        Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
+            if (outputUri != null) {
+                commitCardCroppedPhoto(outputUri)
+            } else {
+                activeCardCropSourceUri = null
+            }
+        } else {
+            activeCardCropSourceUri = null
+            if (result.resultCode == UCrop.RESULT_ERROR) {
+                Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val externalCropCardLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val outputUri = pendingCardExternalCropUri ?: result.data?.data
+            if (outputUri != null) {
+                commitCardCroppedPhoto(outputUri)
+            } else {
+                activeCardCropSourceUri = null
+            }
+        } else {
+            activeCardCropSourceUri = null
+        }
+        pendingCardExternalCropUri = null
+    }
+
+    val videoCropCardLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val isReframe = pendingCardVideoIsReframe
+        pendingCardVideoIsReframe = false
+        if (result.resultCode == Activity.RESULT_OK) {
+            parseVideoCropResult(result.data)?.let { (videoUri, transform) ->
+                home.updateStatusCardVideoTransform(transform)
+                if (!isReframe && videoUri != null) {
+                    scope.launch {
+                        if (!home.saveStatusCardImage(context, videoUri)) {
+                            Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
-        } else if (result.resultCode == UCrop.RESULT_ERROR) {
-            Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val launchCardInAppCrop = { sourceUri: Uri ->
+        val outputUri = createInternalCropOutputUri(context, "status_card_crop")
+        val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
+        val intent = createBackgroundCropIntent(
+            context = context,
+            sourceUri = sourceUri,
+            outputUri = outputUri,
+            aspectRatioX = cardW,
+            aspectRatioY = cardH,
+            maxSizeX = 2048,
+            maxSizeY = 2048,
+            title = customCardCropTitle,
+        )
+        cropCardLauncher.launch(intent)
+    }
+
+    val launchCardExternalCrop = { sourceUri: Uri ->
+        val uri = createBackgroundCropOutputUri(context, "status_card_crop_ext")
+        val copied = runCatching {
+            context.contentResolver.openInputStream(sourceUri)?.use { inputStream ->
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    inputStream.copyTo(outputStream)
+                } ?: error("Failed to open external crop output")
+            } ?: error("Failed to open selected media")
+        }.isSuccess
+
+        if (!copied) {
+            Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
+            launchCardInAppCrop(sourceUri)
+        } else {
+            val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
+            val aspectX = cardW.roundToInt().coerceAtLeast(1)
+            val aspectY = cardH.roundToInt().coerceAtLeast(1)
+            val intent = Intent("com.android.camera.action.CROP").apply {
+                clipData = ClipData.newRawUri("crop_output", uri)
+                setDataAndType(uri, "image/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                putExtra("crop", "true")
+                putExtra("aspectX", aspectX)
+                putExtra("aspectY", aspectY)
+                putExtra("outputX", aspectX.coerceAtMost(2048))
+                putExtra("outputY", aspectY.coerceAtMost(2048))
+                putExtra("return-data", false)
+                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+            }
+            try {
+                pendingCardExternalCropUri = uri
+                externalCropCardLauncher.launch(intent)
+            } catch (t: Throwable) {
+                Log.e("HomeCustomization", "External card crop failed, fallback to in-app crop", t)
+                pendingCardExternalCropUri = null
+                Toast.makeText(context, externalCropUnavailable, Toast.LENGTH_SHORT).show()
+                launchCardInAppCrop(sourceUri)
+            }
         }
     }
 
@@ -139,33 +266,60 @@ fun HomeCustomizationSettings() {
     ) { uri: Uri? ->
         if (uri != null) {
             if (isVideoUri(context, uri)) {
-                scope.launch {
-                    if (!home.saveStatusCardImage(context, uri)) {
-                        Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            } else {
-                val outputUri = createBackgroundCropOutputUri(context, "status_card_crop")
-                val (screenWidth, _) = context.backgroundCropSize()
-                val cardAspectY = (home.statusCardHeight.toFloat() / 112f * (screenWidth / 3f)).coerceAtLeast(100f)
-                val intent = createBackgroundCropIntent(
-                    context = context,
-                    sourceUri = uri,
-                    outputUri = outputUri,
-                    aspectRatioX = screenWidth.toFloat(),
-                    aspectRatioY = cardAspectY,
+                pendingCardVideoIsReframe = false
+                val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
+                videoCropCardLauncher.launch(
+                    createVideoCropIntent(
+                        context = context,
+                        videoUri = uri,
+                        aspectRatioX = cardW,
+                        aspectRatioY = cardH,
+                        cornerRadiusDp = 20f,
+                        title = customCardCropTitle,
+                        initialTransform = VideoCropTransform.Default,
+                    ),
                 )
-                cropCardLauncher.launch(intent)
+            } else {
+                pendingCardPickedSourceUri = uri
+                pendingCardPhotoUri = uri
+                showCardCropMethodDialog = true
             }
         }
     }
 
+    SettingsChooseDialog(
+        show = showCardCropMethodDialog,
+        title = stringResource(R.string.background_crop_method_title),
+        items = listOf(
+            stringResource(R.string.background_crop_method_in_app),
+            stringResource(R.string.background_crop_method_external),
+        ),
+        selectedIndex = 0,
+        onDismiss = {
+            showCardCropMethodDialog = false
+            pendingCardPhotoUri = null
+            pendingCardPickedSourceUri = null
+        },
+        onSelectedIndexChange = { index ->
+            activeCardCropSourceUri = pendingCardPickedSourceUri
+            pendingCardPhotoUri?.let { sourceUri ->
+                when (index) {
+                    0 -> launchCardInAppCrop(sourceUri)
+                    1 -> launchCardExternalCrop(sourceUri)
+                }
+            }
+        },
+    )
+
     val activeCardFile = remember(home.statusCardImagePath, home.statusCardImageVersion) {
         home.statusCardImagePath?.let(::File)?.takeIf { it.isFile }
     }
+    val activeCardIsVideo = remember(activeCardFile) {
+        activeCardFile != null && isVideoFile(activeCardFile)
+    }
     val cardMediaDescription = when {
         activeCardFile == null -> stringResource(R.string.home_card_image_summary)
-        isVideoFile(activeCardFile) -> stringResource(R.string.home_card_media_video_active)
+        activeCardIsVideo -> stringResource(R.string.home_card_media_video_active)
         else -> stringResource(R.string.home_card_media_photo_active)
     }
 
@@ -179,6 +333,43 @@ fun HomeCustomizationSettings() {
                     pickCardImage.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
                     )
+                },
+            )
+        }
+
+        item(visible = activeCardFile != null) {
+            SettingsJumpPageWidget(
+                icon = Icons.TwoTone.Crop,
+                title = stringResource(R.string.crop_adjust_title),
+                description = stringResource(
+                    if (activeCardIsVideo) R.string.crop_adjust_video_summary else R.string.crop_adjust_photo_summary,
+                ),
+                onClick = {
+                    val file = activeCardFile ?: return@SettingsJumpPageWidget
+                    if (activeCardIsVideo) {
+                        pendingCardVideoIsReframe = true
+                        val (cardW, cardH) = context.statusCardCropDimensions(home.statusCardHeight)
+                        videoCropCardLauncher.launch(
+                            createVideoCropIntent(
+                                context = context,
+                                videoUri = Uri.fromFile(file),
+                                aspectRatioX = cardW,
+                                aspectRatioY = cardH,
+                                cornerRadiusDp = 20f,
+                                title = customCardCropTitle,
+                                initialTransform = home.statusCardVideoTransform,
+                            ),
+                        )
+                    } else {
+                        val sourceFile = home.getStatusCardSourceFile(context)
+                        if (sourceFile != null) {
+                            pendingCardPickedSourceUri = null
+                            pendingCardPhotoUri = Uri.fromFile(sourceFile)
+                            showCardCropMethodDialog = true
+                        } else {
+                            Toast.makeText(context, failedMsg, Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 },
             )
         }

@@ -898,4 +898,16 @@
     <string name="theme_import_part_texts">Custom interface texts</string>
     <string name="theme_import_adaptive_hint">Adaptive theme detected: the variant matching the current light/dark mode will be applied.</string>
     <string name="theme_import_apply">Apply selected</string>
+    <string name="crop_ratio_target">Target</string>
+    <string name="crop_ratio_free">Free</string>
+    <string name="crop_rotate_90">Rotate 90°</string>
+    <string name="crop_use_original">Original</string>
+    <string name="crop_adjust_title">Adjust crop</string>
+    <string name="crop_adjust_photo_summary">Re-crop or change aspect ratio of current photo</string>
+    <string name="crop_adjust_video_summary">Adjust zoom and position of looping video</string>
+    <string name="video_crop_title">Frame video</string>
+    <string name="video_crop_hint">Pinch to zoom and drag to position the video frame</string>
+    <string name="video_crop_zoom">Zoom</string>
+    <string name="video_crop_load_failed">Could not preview video; framing settings will still be saved</string>
+    <string name="module_banner_crop">Adjust crop</string>
 </resources>

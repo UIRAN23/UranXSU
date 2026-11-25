@@ -41,6 +41,7 @@ import androidx.compose.material.icons.twotone.Brush
 import androidx.compose.material.icons.twotone.Check
 import androidx.compose.material.icons.twotone.ColorLens
 import androidx.compose.material.icons.twotone.Contrast
+import androidx.compose.material.icons.twotone.Crop
 import androidx.compose.material.icons.twotone.DarkMode
 import androidx.compose.material.icons.twotone.DesignServices
 import androidx.compose.material.icons.twotone.Dock
@@ -103,6 +104,7 @@ import org.uranxsu.manager.R
 import org.uranxsu.manager.domain.model.availablePaletteStyles
 import org.uranxsu.manager.ui.component.ConfirmResult
 import org.uranxsu.manager.ui.component.KeyPointSlider
+import org.uranxsu.manager.ui.component.media.VideoCropTransform
 import org.uranxsu.manager.ui.component.media.isVideoUri
 import org.uranxsu.manager.ui.component.rememberConfirmDialog
 import org.uranxsu.manager.ui.component.settings.AppBackButton
@@ -119,6 +121,9 @@ import org.uranxsu.manager.ui.screen.themeSettings.component.ThemeSettingsDialog
 import org.uranxsu.manager.ui.screen.themeSettings.crop.backgroundCropSize
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropIntent
 import org.uranxsu.manager.ui.screen.themeSettings.crop.createBackgroundCropOutputUri
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createInternalCropOutputUri
+import org.uranxsu.manager.ui.screen.themeSettings.crop.createVideoCropIntent
+import org.uranxsu.manager.ui.screen.themeSettings.crop.parseVideoCropResult
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.BottomBarStyle
 import org.uranxsu.manager.ui.theme.CardConfig
@@ -151,6 +156,7 @@ fun ThemeSettingsScreen(
 ) {
     val themeConfig: ThemeConfig = koinInject()
     val cardConfig: CardConfig = koinInject()
+    val backgroundManager: BackgroundManager = koinInject()
     // 顶部滚动行为
     val topAppBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topAppBarState)
@@ -167,29 +173,47 @@ fun ThemeSettingsScreen(
 
     // Image selection and cropping
     var pendingBackgroundImageUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingPickedPhotoSourceUri by remember { mutableStateOf<Uri?>(null) }
+    var activeCropSourceUri by remember { mutableStateOf<Uri?>(null) }
     var pendingExternalCropOutputUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingVideoCropIsReframe by remember { mutableStateOf(false) }
     var showCropMethodDialog by remember { mutableStateOf(false) }
 
     val externalCropUnavailable = stringResource(R.string.background_external_crop_unavailable)
     val backgroundCropFailed = stringResource(R.string.background_crop_failed)
+    val backgroundCropTitle = stringResource(R.string.background_crop_title)
+    val videoCropTitle = stringResource(R.string.video_crop_title)
+
+    fun commitCroppedPhoto(outputUri: Uri) {
+        val originalSource = activeCropSourceUri
+        activeCropSourceUri = null
+        backgroundManager.saveBackgroundVideoTransform(VideoCropTransform.Default)
+        coroutineScope.launch {
+            if (originalSource != null) {
+                backgroundManager.saveBackgroundSourceImage(context, originalSource)
+            }
+            settingsViewModel.dispatch(
+                SettingsUiAction.SetCustomBackground(outputUri.toString()),
+            )
+        }
+    }
 
     val uCropLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             result.data?.let { data ->
-                UCrop.getOutput(data)?.let {
-                    settingsViewModel.dispatch(
-                        SettingsUiAction.SetCustomBackground(it.toString()),
-                    )
-                }
+                UCrop.getOutput(data)?.let(::commitCroppedPhoto)
             }
-        } else if (result.resultCode == UCrop.RESULT_ERROR) {
-            Toast.makeText(
-                context,
-                backgroundCropFailed,
-                Toast.LENGTH_SHORT,
-            ).show()
+        } else {
+            activeCropSourceUri = null
+            if (result.resultCode == UCrop.RESULT_ERROR) {
+                Toast.makeText(
+                    context,
+                    backgroundCropFailed,
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
         }
     }
 
@@ -198,17 +222,36 @@ fun ThemeSettingsScreen(
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
             val outputUri = pendingExternalCropOutputUri ?: result.data?.data
-            outputUri?.let {
-                settingsViewModel.dispatch(
-                    SettingsUiAction.SetCustomBackground(it.toString()),
-                )
+            if (outputUri != null) {
+                commitCroppedPhoto(outputUri)
+            } else {
+                activeCropSourceUri = null
             }
+        } else {
+            activeCropSourceUri = null
         }
         pendingExternalCropOutputUri = null
     }
 
+    val videoCropLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val isReframe = pendingVideoCropIsReframe
+        pendingVideoCropIsReframe = false
+        if (result.resultCode == Activity.RESULT_OK) {
+            parseVideoCropResult(result.data)?.let { (uri, transform) ->
+                backgroundManager.saveBackgroundVideoTransform(transform)
+                if (!isReframe && uri != null) {
+                    settingsViewModel.dispatch(
+                        SettingsUiAction.SetCustomBackground(uri.toString()),
+                    )
+                }
+            }
+        }
+    }
+
     val launchInAppCrop = { sourceUri: Uri ->
-        val outputUri = createBackgroundCropOutputUri(context, "background_crop_ucrop")
+        val outputUri = createInternalCropOutputUri(context, "background_crop_ucrop")
         val (screenWidth, screenHeight) = context.backgroundCropSize()
         val intent = createBackgroundCropIntent(
             context = context,
@@ -218,6 +261,7 @@ fun ThemeSettingsScreen(
             aspectRatioY = screenHeight.toFloat(),
             maxSizeX = screenWidth,
             maxSizeY = screenHeight,
+            title = backgroundCropTitle,
         )
 
         uCropLauncher.launch(intent)
@@ -273,12 +317,52 @@ fun ThemeSettingsScreen(
     ) { uri: Uri? ->
         uri?.let {
             if (isVideoUri(context, it)) {
-                settingsViewModel.dispatch(
-                    SettingsUiAction.SetCustomBackground(it.toString()),
+                pendingVideoCropIsReframe = false
+                val (screenWidth, screenHeight) = context.backgroundCropSize()
+                videoCropLauncher.launch(
+                    createVideoCropIntent(
+                        context = context,
+                        videoUri = it,
+                        aspectRatioX = screenWidth.toFloat(),
+                        aspectRatioY = screenHeight.toFloat(),
+                        cornerRadiusDp = 24f,
+                        title = videoCropTitle,
+                        initialTransform = VideoCropTransform.Default,
+                    ),
                 )
             } else {
+                pendingPickedPhotoSourceUri = it
                 pendingBackgroundImageUri = it
                 showCropMethodDialog = true
+            }
+        }
+    }
+
+    val launchRecrop = {
+        val activeUri = themeConfig.customBackgroundUri
+        val isVideo = activeUri != null && isVideoUri(context, activeUri)
+        if (isVideo && activeUri != null) {
+            pendingVideoCropIsReframe = true
+            val (screenWidth, screenHeight) = context.backgroundCropSize()
+            videoCropLauncher.launch(
+                createVideoCropIntent(
+                    context = context,
+                    videoUri = activeUri,
+                    aspectRatioX = screenWidth.toFloat(),
+                    aspectRatioY = screenHeight.toFloat(),
+                    cornerRadiusDp = 24f,
+                    title = videoCropTitle,
+                    initialTransform = themeConfig.backgroundVideoTransform,
+                ),
+            )
+        } else {
+            val sourceFile = backgroundManager.getBackgroundSourceFile(context)
+            if (sourceFile != null) {
+                pendingPickedPhotoSourceUri = null
+                pendingBackgroundImageUri = Uri.fromFile(sourceFile)
+                showCropMethodDialog = true
+            } else {
+                Toast.makeText(context, backgroundCropFailed, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -294,8 +378,10 @@ fun ThemeSettingsScreen(
         onDismiss = {
             showCropMethodDialog = false
             pendingBackgroundImageUri = null
+            pendingPickedPhotoSourceUri = null
         },
         onSelectedIndexChange = { index ->
+            activeCropSourceUri = pendingPickedPhotoSourceUri
             pendingBackgroundImageUri?.let { sourceUri ->
                 when (index) {
                     0 -> launchInAppCrop(sourceUri)
@@ -382,6 +468,7 @@ fun ThemeSettingsScreen(
                     state = settingsState,
                     viewModel = settingsViewModel,
                     pickImageLauncher = pickImageLauncher,
+                    onAdjustCrop = launchRecrop,
                     coroutineScope = coroutineScope,
                 )
             }
@@ -656,6 +743,7 @@ private fun WallpaperEffectsSettings(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
     pickImageLauncher: ManagedActivityResultLauncher<PickVisualMediaRequest, Uri?>,
+    onAdjustCrop: () -> Unit,
     coroutineScope: CoroutineScope,
 ) {
     val context = LocalContext.current
@@ -692,6 +780,16 @@ private fun WallpaperEffectsSettings(
                                 PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
                             )
                         },
+                    )
+                }
+                item(topPadding = 1.dp) {
+                    SettingsJumpPageWidget(
+                        icon = Icons.TwoTone.Crop,
+                        title = stringResource(R.string.crop_adjust_title),
+                        description = stringResource(
+                            if (isVideoBg) R.string.crop_adjust_video_summary else R.string.crop_adjust_photo_summary,
+                        ),
+                        onClick = { onAdjustCrop() },
                     )
                 }
                 backgroundAdjustmentControls(

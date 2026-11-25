@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.paint
 import androidx.compose.ui.geometry.Offset
@@ -762,27 +763,47 @@ private fun ManagerNavEntry(
         ) {
             if (isVideoBg && customBgUri != null) {
                 val frameBitmap = backgroundRenderState.imageBitmap
-                val framePainter = remember(frameBitmap) { frameBitmap?.let { BitmapPainter(it) } }
+                val videoTransform = themeConfig.backgroundVideoTransform.sanitized()
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .clipToBounds()
                         .background(surfaceContainer)
                         .onGloballyPositioned { coordinates ->
                             backgroundBlurAnchorCoordinates = coordinates.takeIf {
                                 it.isAttached
                             }
                         }
-                        .then(
-                            if (framePainter != null) {
-                                Modifier.paint(
-                                    painter = framePainter,
-                                    contentScale = ContentScale.Crop,
-                                )
-                            } else {
-                                Modifier
-                            },
-                        )
                         .drawWithContent {
+                            if (
+                                frameBitmap != null &&
+                                frameBitmap.width > 0 &&
+                                frameBitmap.height > 0 &&
+                                size.width > 0f &&
+                                size.height > 0f
+                            ) {
+                                val bw = frameBitmap.width.toFloat()
+                                val bh = frameBitmap.height.toFloat()
+                                val baseScale = maxOf(size.width / bw, size.height / bh)
+                                val finalScale = baseScale * videoTransform.scale
+                                val (maxDx, maxDy) =
+                                    org.uranxsu.manager.ui.component.media.computeVideoOverflow(
+                                        viewWidth = size.width,
+                                        viewHeight = size.height,
+                                        mediaWidth = bw,
+                                        mediaHeight = bh,
+                                        scale = videoTransform.scale,
+                                    )
+                                val left =
+                                    (size.width - bw * finalScale) / 2f + videoTransform.offsetX * maxDx
+                                val top =
+                                    (size.height - bh * finalScale) / 2f + videoTransform.offsetY * maxDy
+                                translate(left = left, top = top) {
+                                    scale(scaleX = finalScale, scaleY = finalScale, pivot = Offset.Zero) {
+                                        drawImage(image = frameBitmap, filterQuality = FilterQuality.Low)
+                                    }
+                                }
+                            }
                             drawContent()
                             drawRect(
                                 color = surfaceContainer.copy(
@@ -797,6 +818,7 @@ private fun ManagerNavEntry(
                             modifier = Modifier.fillMaxSize(),
                             isMuted = true,
                             isActive = true,
+                            transform = videoTransform,
                         )
                     }
                 }

@@ -804,4 +804,16 @@
     <string name="theme_import_part_texts">自定义界面文本</string>
     <string name="theme_import_adaptive_hint">检测到自适应主题：将应用与当前浅色/深色模式匹配的变体。</string>
     <string name="theme_import_apply">应用所选</string>
+    <string name="crop_ratio_target">适应目标</string>
+    <string name="crop_ratio_free">自由</string>
+    <string name="crop_rotate_90">旋转 90°</string>
+    <string name="crop_use_original">原图</string>
+    <string name="crop_adjust_title">调整裁剪</string>
+    <string name="crop_adjust_photo_summary">重新裁剪或调整当前图片比例</string>
+    <string name="crop_adjust_video_summary">调整循环视频的缩放与位置</string>
+    <string name="video_crop_title">调整视频画面</string>
+    <string name="video_crop_hint">双指缩放并拖动以调整视频显示区域</string>
+    <string name="video_crop_zoom">缩放</string>
+    <string name="video_crop_load_failed">无法预览视频，但仍会保存画面设置</string>
+    <string name="module_banner_crop">调整裁剪</string>
 </resources>

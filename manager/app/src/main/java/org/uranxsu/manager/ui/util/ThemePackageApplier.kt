@@ -3,6 +3,7 @@ package org.uranxsu.manager.ui.util
 import android.content.Context
 import android.net.Uri
 import java.io.File
+import org.uranxsu.manager.ui.component.media.VideoCropTransform
 import org.uranxsu.manager.ui.component.media.isVideoFile
 import org.uranxsu.manager.ui.theme.BackgroundManager
 import org.uranxsu.manager.ui.theme.BottomBarStyle
@@ -75,6 +76,8 @@ object ThemePackageApplier {
             val bgPath = selectedVariant?.backgroundPath ?: imported.backgroundPath
             val hasBg = variantData?.hasBackground ?: data.hasBackground
             if (bgPath != null && File(bgPath).isFile) {
+                backgroundManager.clearBackgroundSourceImage(context)
+                backgroundManager.saveBackgroundVideoTransform(VideoCropTransform.Default)
                 backgroundManager.saveAndApplyCustomBackground(context, Uri.fromFile(File(bgPath)))
                 settingsViewModel.dispatch(SettingsUiAction.Initialize)
             } else if (hasBg == false) {
@@ -86,6 +89,8 @@ object ThemePackageApplier {
             val cardBgPath = selectedVariant?.cardBackgroundPath ?: imported.cardBackgroundPath
             val hasCardBg = variantData?.hasCardBackground ?: data.hasCardBackground
             if (cardBgPath != null && File(cardBgPath).isFile) {
+                homeCustomization.clearStatusCardSourceImage(context)
+                homeCustomization.updateStatusCardVideoTransform(VideoCropTransform.Default)
                 homeCustomization.saveStatusCardImageFile(context, File(cardBgPath))
             } else if (hasCardBg == false) {
                 homeCustomization.clearStatusCardImage(context)

@@ -169,10 +169,6 @@ sealed interface Route :
 
     @Parcelize
     @Serializable
-    data object NoShot : Route
-
-    @Parcelize
-    @Serializable
     data object SystemHealth : Route
 
     @Parcelize

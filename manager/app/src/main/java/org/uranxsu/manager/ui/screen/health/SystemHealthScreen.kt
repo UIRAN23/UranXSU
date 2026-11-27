@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.add
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,9 +27,9 @@ import androidx.compose.material.icons.twotone.DeleteSweep
 import androidx.compose.material.icons.twotone.HealthAndSafety
 import androidx.compose.material.icons.twotone.Layers
 import androidx.compose.material.icons.twotone.Memory
+import androidx.compose.material.icons.twotone.RestartAlt
 import androidx.compose.material.icons.twotone.Restore
 import androidx.compose.material.icons.twotone.Science
-import androidx.compose.material.icons.twotone.ScreenshotMonitor
 import androidx.compose.material.icons.twotone.Sync
 import androidx.compose.material.icons.twotone.TaskAlt
 import androidx.compose.material.icons.twotone.Tune
@@ -73,8 +74,17 @@ import org.uranxsu.manager.R
 import org.uranxsu.manager.data.backup.BackupInspection
 import org.uranxsu.manager.data.backup.BackupSection
 import org.uranxsu.manager.data.backup.ConfigBackupManager
-import org.uranxsu.manager.data.ksud.KsudSyncStatus
+import org.uranxsu.manager.domain.model.HealthComponentId
+import org.uranxsu.manager.domain.model.requiresReboot
+import org.uranxsu.manager.ui.component.ConfirmResult
+import org.uranxsu.manager.ui.component.KernelLkmDialog
+import org.uranxsu.manager.ui.component.KsudDaemonDialog
 import org.uranxsu.manager.ui.component.SwipeableSnackbarHost
+import org.uranxsu.manager.ui.component.WarningCard
+import org.uranxsu.manager.ui.component.componentDescriptionText
+import org.uranxsu.manager.ui.component.componentRebootReason
+import org.uranxsu.manager.ui.component.rebootRequiredNames
+import org.uranxsu.manager.ui.component.rememberConfirmDialog
 import org.uranxsu.manager.ui.component.rememberLoadingDialog
 import org.uranxsu.manager.ui.component.settings.AppBackButton
 import org.uranxsu.manager.ui.component.settings.SegmentedColumn
@@ -107,6 +117,7 @@ fun SystemHealthScreen() {
     val navigator = LocalNavigator.current
     val snackbarHost = LocalSnackbarHost.current
     val loadingDialog = rememberLoadingDialog()
+    val confirmDialog = rememberConfirmDialog()
     val scope = rememberCoroutineScope()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
     val pullRefreshState = rememberPullToRefreshState()
@@ -115,12 +126,60 @@ fun SystemHealthScreen() {
     var selectedExportSections by remember { mutableStateOf(BackupSection.entries.toSet()) }
     var pendingRestore by remember { mutableStateOf<Pair<Uri, BackupInspection>?>(null) }
     var selectedRestoreSections by remember { mutableStateOf<Set<BackupSection>>(emptySet()) }
+    var showKsudDialog by remember { mutableStateOf(false) }
+    var showLkmDialog by remember { mutableStateOf(false) }
 
     val ksudSyncedMsg = stringResource(R.string.ksud_sync_success)
     val opFailMsg = stringResource(R.string.mount_operation_failed)
+    val rebootConfirmTitle = stringResource(R.string.health_reboot_confirm_title)
+    val rebootActionLabel = stringResource(R.string.health_reboot_action)
+    val cancelLabel = stringResource(android.R.string.cancel)
     val backupExportOk = stringResource(R.string.backup_export_success)
     val backupExportFail = stringResource(R.string.backup_export_failed)
     val backupInspectFail = stringResource(R.string.backup_inspect_failed)
+
+    val health = uiState.health
+    val rebootRequiredNames = health.rebootRequiredNames()
+    val rebootConfirmBody = stringResource(R.string.health_reboot_confirm_body, rebootRequiredNames)
+
+    fun triggerReboot() {
+        scope.launch {
+            val confirm = confirmDialog.awaitConfirm(
+                title = rebootConfirmTitle,
+                content = rebootConfirmBody,
+                confirm = rebootActionLabel,
+                dismiss = cancelLabel,
+            )
+            if (confirm == ConfirmResult.Confirmed) {
+                viewModel.reboot("").onFailure {
+                    snackbarHost.showReplacingSnackbar(opFailMsg)
+                }
+            }
+        }
+    }
+
+    if (showKsudDialog) {
+        KsudDaemonDialog(
+            health = health,
+            onDismiss = { showKsudDialog = false },
+            onSync = {
+                scope.launch {
+                    val ok = loadingDialog.withLoading { viewModel.syncKsud().isSuccess }
+                    snackbarHost.showReplacingSnackbar(if (ok) ksudSyncedMsg else opFailMsg)
+                }
+            },
+            onReboot = ::triggerReboot,
+        )
+    }
+
+    if (showLkmDialog) {
+        KernelLkmDialog(
+            health = health,
+            onDismiss = { showLkmDialog = false },
+            onOpenInstall = { navigator.push(Route.Install(null)) },
+            onReboot = ::triggerReboot,
+        )
+    }
 
     ActivityResumeEffect(viewModel) {
         viewModel.refresh()
@@ -212,136 +271,89 @@ fun SystemHealthScreen() {
                     bottom = innerPadding.calculateBottomPadding() + 16.dp,
                 ),
             ) {
+                if (health.anyRebootRequired) {
+                    item(key = "reboot_banner") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                        ) {
+                            WarningCard(
+                                message = stringResource(R.string.health_reboot_banner, rebootRequiredNames),
+                                icon = {
+                                    Icon(
+                                        imageVector = Icons.TwoTone.RestartAlt,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                },
+                                onClick = ::triggerReboot,
+                            )
+                        }
+                    }
+                }
+
                 item(key = "components_section") {
                     SegmentedColumn(title = stringResource(R.string.health_components_section)) {
                         item {
-                            val lkmDesc = when {
-                                uiState.lkmMode != true -> stringResource(R.string.health_lkm_builtin)
-
-                                uiState.needsLkmUpdate -> stringResource(
-                                    R.string.health_lkm_mismatch,
-                                    uiState.runtimeLkmHash ?: "?",
-                                    uiState.bundledLkmHash,
-                                )
-
-                                else -> stringResource(
-                                    R.string.health_lkm_matched,
-                                    uiState.runtimeLkmHash ?: uiState.bundledLkmHash,
-                                )
-                            }
+                            val reason = componentRebootReason(health, HealthComponentId.LKM)
                             SettingsJumpPageWidget(
                                 icon = Icons.TwoTone.HealthAndSafety,
                                 title = stringResource(R.string.health_lkm_title),
-                                description = lkmDesc,
-                                isError = uiState.needsLkmUpdate,
-                                onClick = {
-                                    if (uiState.lkmMode == true) {
-                                        navigator.push(Route.Install(null))
-                                    }
-                                },
+                                description = componentDescriptionText(health, HealthComponentId.LKM),
+                                isError = reason.requiresReboot,
+                                onClick = { showLkmDialog = true },
                             )
                         }
 
                         item {
-                            val ksud = uiState.ksudIntegrity
-                            val needsRepair = ksud.status == KsudSyncStatus.NEEDS_SYNC ||
-                                ksud.status == KsudSyncStatus.MISSING
-                            val desc = when (ksud.status) {
-                                KsudSyncStatus.UP_TO_DATE -> stringResource(
-                                    R.string.health_ksud_up_to_date,
-                                    ksud.installedVersion ?: ksud.bundledVersion,
-                                )
-
-                                KsudSyncStatus.NEEDS_SYNC,
-                                KsudSyncStatus.MISSING,
-                                -> stringResource(R.string.health_ksud_tap_sync)
-
-                                KsudSyncStatus.UNAVAILABLE -> stringResource(R.string.ksud_status_unavailable)
-                            }
+                            val reason = componentRebootReason(health, HealthComponentId.KSUD)
                             SettingsJumpPageWidget(
                                 icon = Icons.TwoTone.Sync,
                                 title = customText(CustomTextKey.HOME_INFO_KSUD),
-                                description = desc,
-                                isError = needsRepair,
+                                description = componentDescriptionText(health, HealthComponentId.KSUD),
+                                isError = reason.requiresReboot ||
+                                    reason == org.uranxsu.manager.domain.model.ComponentRebootReason.KSUD_NEEDS_SYNC,
+                                onClick = { showKsudDialog = true },
+                            )
+                        }
+
+                        item(visible = health.isFullFeatured) {
+                            val reason = componentRebootReason(health, HealthComponentId.NOMOUNT)
+                            SettingsJumpPageWidget(
+                                icon = Icons.TwoTone.Layers,
+                                title = customText(CustomTextKey.TOOL_NOMOUNT),
+                                description = componentDescriptionText(health, HealthComponentId.NOMOUNT),
+                                isError = reason.requiresReboot || health.nomountBootloopDisabled,
                                 onClick = {
-                                    if (needsRepair) {
-                                        scope.launch {
-                                            val ok = loadingDialog.withLoading { viewModel.syncKsud().isSuccess }
-                                            snackbarHost.showReplacingSnackbar(if (ok) ksudSyncedMsg else opFailMsg)
-                                        }
+                                    if (health.mountMode == "no_mount") {
+                                        navigator.push(Route.NoMountManager)
+                                    } else {
+                                        navigator.push(Route.MountSettings)
                                     }
                                 },
                             )
                         }
 
-                        item(visible = uiState.isFullFeatured) {
-                            val nomountDesc = if (uiState.nomountReady) {
-                                stringResource(
-                                    R.string.health_nomount_ready,
-                                    uiState.nomountVersion.ifBlank { "OK" },
-                                    uiState.nomountRules,
-                                )
-                            } else {
-                                stringResource(R.string.health_nomount_inactive)
-                            }
-                            SettingsJumpPageWidget(
-                                icon = Icons.TwoTone.Layers,
-                                title = customText(CustomTextKey.TOOL_NOMOUNT),
-                                description = nomountDesc,
-                                onClick = { navigator.push(Route.NoMountManager) },
-                            )
-                        }
-
-                        item(visible = uiState.isFullFeatured) {
-                            val susfsDesc = if (uiState.susfsVersion.isNotBlank()) {
-                                val detail = listOfNotNull(
-                                    uiState.susfsVersion,
-                                    uiState.susfsVariant.takeIf { it.isNotBlank() },
-                                    if (uiState.susfsLkmLoaded) "LKM" else null,
-                                ).joinToString(" • ")
-                                stringResource(R.string.health_susfs_active, detail)
-                            } else {
-                                stringResource(R.string.health_susfs_inactive)
-                            }
+                        item(visible = health.isFullFeatured) {
+                            val reason = componentRebootReason(health, HealthComponentId.SUSFS)
                             SettingsJumpPageWidget(
                                 icon = Icons.TwoTone.Tune,
                                 title = customText(CustomTextKey.EXTENSION_SUSFS),
-                                description = susfsDesc,
+                                description = componentDescriptionText(health, HealthComponentId.SUSFS),
+                                isError = reason.requiresReboot,
                                 onClick = { navigator.push(Route.SuSFSConfig) },
                             )
                         }
 
-                        item(visible = uiState.isFullFeatured) {
-                            val zygiskDesc = when {
-                                uiState.zygiskEnabled && uiState.zygiskRunning ->
-                                    stringResource(R.string.health_zygisk_active)
-
-                                uiState.zygiskEnabled ->
-                                    stringResource(R.string.health_zygisk_enabled_idle)
-
-                                else ->
-                                    stringResource(R.string.health_zygisk_disabled)
-                            }
+                        item(visible = health.isFullFeatured) {
+                            val reason = componentRebootReason(health, HealthComponentId.ZYGISK)
                             SettingsJumpPageWidget(
                                 icon = Icons.TwoTone.Science,
                                 title = customText(CustomTextKey.ZYGISK_SETTINGS_TITLE),
-                                description = zygiskDesc,
+                                description = componentDescriptionText(health, HealthComponentId.ZYGISK),
+                                isError = reason.requiresReboot,
                                 onClick = { navigator.push(Route.BuiltinZygisk) },
-                            )
-                        }
-
-                        item(visible = uiState.isFullFeatured) {
-                            val noshotDesc = if (uiState.noshotEnabled) {
-                                stringResource(R.string.health_noshot_active, uiState.noshotMode)
-                            } else {
-                                stringResource(R.string.health_noshot_disabled)
-                            }
-                            SettingsJumpPageWidget(
-                                icon = Icons.TwoTone.ScreenshotMonitor,
-                                title = customText(CustomTextKey.TOOL_NOSHOT),
-                                description = noshotDesc,
-                                isError = uiState.noshotBootloopDisabled,
-                                onClick = { navigator.push(Route.NoShot) },
                             )
                         }
                     }
@@ -546,7 +558,6 @@ private fun BackupSectionsDialog(
                         BackupSection.ALLOWLIST -> R.string.backup_section_allowlist
                         BackupSection.SUSFS -> R.string.backup_section_susfs
                         BackupSection.NOMOUNT -> R.string.backup_section_nomount
-                        BackupSection.NOSHOT -> R.string.backup_section_noshot
                         BackupSection.APPEARANCE -> R.string.backup_section_appearance
                     }
                     val checked = section in selected

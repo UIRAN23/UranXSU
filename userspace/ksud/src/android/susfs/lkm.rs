@@ -444,6 +444,11 @@ pub fn load_now(kmi_override: Option<&str>, apply_config: bool) -> Result<()> {
             fs::write(defs::SUSFS_LKM_MARKER, format!("{kmi}\n"))
                 .context("write SUSFS LKM marker")?;
             let _ = set_permissions(defs::SUSFS_LKM_MARKER, Permissions::from_mode(0o600));
+            crate::android::init_event::write_component_marker(
+                defs::SUSFS_LOADED_HASH_PATH,
+                defs::SUSFS_HASH,
+                &format!("{kmi}:{mode}"),
+            );
             clear_last_error();
             let _ = assets::reconcile_susfs_link();
             if apply_config {

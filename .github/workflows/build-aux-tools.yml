@@ -56,25 +56,6 @@ jobs:
           ls -la aarch64/nm arm/nm x86_64/nm
           file aarch64/nm arm/nm x86_64/nm
 
-      - name: Setup Zig 0.17.1 for NoShot
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.17.1
-
-      - name: Build NoShot (arm64-v8a, armeabi-v7a, x86_64, x86)
-        run: |
-          set -eu
-          cd external/noshot
-          zig build test
-          zig build
-          cp zig-out/zygisk/arm64-v8a.so ../../out/aarch64/noshot_64.so
-          cp zig-out/zygisk/armeabi-v7a.so ../../out/aarch64/noshot_32.so
-          cp zig-out/zygisk/armeabi-v7a.so ../../out/arm/noshot_32.so
-          cp zig-out/zygisk/x86_64.so ../../out/x86_64/noshot_64.so
-          cp zig-out/zygisk/x86.so ../../out/x86_64/noshot_32.so
-          chmod 0644 ../../out/aarch64/noshot_*.so ../../out/arm/noshot_*.so ../../out/x86_64/noshot_*.so
-          ls -la ../../out/aarch64/noshot_*.so ../../out/arm/noshot_*.so ../../out/x86_64/noshot_*.so
-
       - name: Upload aarch64 auxiliary tools
         uses: actions/upload-artifact@v7
         with:

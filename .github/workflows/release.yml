@@ -80,7 +80,7 @@ jobs:
               "versionCode": version_code,
               "versionName": tag,
               "lkmHash": tree_hash("kernel", "uapi"),
-              "userspaceHash": tree_hash("userspace/ksud", "susfs-lkm", "external/nomount", "external/BuiltZygisk", "external/noshot"),
+              "userspaceHash": tree_hash("userspace/ksud", "susfs-lkm", "external/nomount", "external/BuiltZygisk"),
               "uapiVersion": uapi_ver,
           }
           print(json.dumps(meta, indent=2))

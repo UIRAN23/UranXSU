@@ -51,8 +51,11 @@ extra["bundledUserspaceHash"] = gitTreeHash(
     "susfs-lkm",
     "external/nomount",
     "external/BuiltZygisk",
-    "external/noshot",
 )
+extra["bundledKsudHash"] = gitTreeHash("userspace/ksud")
+extra["bundledSusfsHash"] = gitTreeHash("susfs-lkm", "userspace/ksud/src/android/susfs")
+extra["bundledNomountHash"] = gitTreeHash("external/nomount", "userspace/ksud/src/android/mount")
+extra["bundledZygiskHash"] = gitTreeHash("external/BuiltZygisk", "userspace/ksud/src/android/builtin_zygisk.rs")
 extra["isPrBuild"] = project.findProperty("IS_PR_BUILD")?.toString()?.toBoolean() ?: false
 extra["defaultManagerPackageName"] = "org.uranxsu.manager"
 extra["managerPackageName"] = project.findProperty("KSU_PACKAGE_NAME")?.toString() ?: extra["defaultManagerPackageName"]

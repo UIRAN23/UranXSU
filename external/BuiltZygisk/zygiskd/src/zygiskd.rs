@@ -44,7 +44,6 @@ const COMPANION_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 /// Represents a loaded Zygisk module.
 struct Module {
     name: String,
-    dir_path: PathBuf,
     lib_fd: OwnedFd,
     /// A handle to the module's companion process socket, if it exists and is running.
     companion: Mutex<Option<UnixStream>>,
@@ -549,67 +548,45 @@ fn load_modules() -> Result<Vec<Module>> {
     debug!("Daemon architecture: {arch}");
 
     let mut modules = Vec::new();
-    let mut has_standalone_noshot = false;
-    match fs::read_dir(constants::PATH_MODULES_DIR) {
-        Ok(dir) => {
-            for entry in dir.flatten() {
-                let name = entry.file_name().into_string().unwrap_or_default();
-                let disabled_flag = entry.path().join("disable");
-                let remove_flag = entry.path().join("remove");
-                if name == "noshot_zygisk" && !disabled_flag.exists() && !remove_flag.exists() {
-                    has_standalone_noshot = true;
-                }
-                let so_path = entry.path().join(format!("zygisk/{arch}.so"));
-
-                if !so_path.exists() || disabled_flag.exists() || remove_flag.exists() {
-                    continue;
-                }
-
-                info!("Loading module `{}`...", name);
-                match create_library_fd(&so_path, "zygisk-module") {
-                    Ok(lib_fd) => {
-                        modules.push(Module {
-                            name,
-                            dir_path: entry.path(),
-                            lib_fd,
-                            companion: Mutex::new(None),
-                        });
-                    }
-                    Err(e) => {
-                        warn!("Failed to create memfd for `{}`: {}", name, e);
-                    }
-                };
-            }
-        }
-        // No module directory at all means no external modules, which is the normal state on a
-        // fresh build. Built-in modules can still load below.
+    let dir = match fs::read_dir(constants::PATH_MODULES_DIR) {
+        Ok(dir) => dir,
+        // No module directory at all means no modules, which is the normal state on a
+        // build with no root framework. Anything else is a failure to read a directory
+        // that does exist, and must be reported rather than passed off as an empty set:
+        // `refresh_modules` would otherwise retire every live module and call it success.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             warn!("No module directory at {}", constants::PATH_MODULES_DIR);
+            return Ok(modules);
         }
         Err(e) => {
             return Err(e)
                 .with_context(|| format!("Failed to read {}", constants::PATH_MODULES_DIR));
         }
-    }
+    };
 
-    let builtin_noshot_dir = Path::new(constants::PATH_BUILTIN_NOSHOT_DIR);
-    let builtin_noshot_enabled = builtin_noshot_dir.join("enabled").exists();
-    let builtin_noshot_so = builtin_noshot_dir.join(format!("zygisk/{arch}.so"));
-    if !has_standalone_noshot && builtin_noshot_enabled && builtin_noshot_so.exists() {
-        info!("Loading built-in NoShot module...");
-        match create_library_fd(&builtin_noshot_so, "zygisk-module") {
+    for entry in dir.flatten() {
+        let name = entry.file_name().into_string().unwrap_or_default();
+        let so_path = entry.path().join(format!("zygisk/{arch}.so"));
+        let disabled_flag = entry.path().join("disable");
+        let remove_flag = entry.path().join("remove");
+
+        if !so_path.exists() || disabled_flag.exists() || remove_flag.exists() {
+            continue;
+        }
+
+        info!("Loading module `{}`...", name);
+        match create_library_fd(&so_path, "zygisk-module") {
             Ok(lib_fd) => {
                 modules.push(Module {
-                    name: constants::BUILTIN_NOSHOT_NAME.to_string(),
-                    dir_path: builtin_noshot_dir.to_path_buf(),
+                    name,
                     lib_fd,
                     companion: Mutex::new(None),
                 });
             }
             Err(e) => {
-                warn!("Failed to create memfd for built-in NoShot: {}", e);
+                warn!("Failed to create memfd for `{}`: {}", name, e);
             }
-        }
+        };
     }
 
     Ok(modules)
@@ -1219,7 +1196,8 @@ fn handle_get_module_dir(stream: &mut UnixStream, context: &AppContext) -> Resul
     let index = stream.read_usize()?;
     let modules = context.modules();
     let module = module_at(&modules, index)?;
-    let dir = fs::File::open(&module.dir_path)?;
+    let dir_path = format!("{}/{}", constants::PATH_MODULES_DIR, module.name);
+    let dir = fs::File::open(dir_path)?;
     stream.send_fd(dir.as_raw_fd())?;
     Ok(())
 }

@@ -69,7 +69,6 @@ mod android {
                 || file == "waitsys"
                 || file == "susfs_insmod"
                 || file == "nm"
-                || file.starts_with("noshot")
                 || file.starts_with("zygisk")
                 || file.starts_with("libzygisk")
                 || file.ends_with(".ko")

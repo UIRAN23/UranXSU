@@ -100,22 +100,30 @@ mod android {
     pub const BUILTIN_ZYGISK_FLAG: &str = concatcp!(WORKING_DIR, ".builtin_zygisk");
     pub const BUILTIN_ZYGISK_DIR: &str = concatcp!(WORKING_DIR, "zygisk/");
     pub const BUILTIN_ZYGISK_WORK_DIR: &str = "/data/system/nyazygisk";
-
-    // Built-in NoShot (per-app FLAG_SECURE remover)
-    pub const NOSHOT_DIR: &str = concatcp!(WORKING_DIR, "noshot/");
-    pub const NOSHOT_ENABLED_FLAG: &str = concatcp!(NOSHOT_DIR, "enabled");
-    pub const NOSHOT_ALLOW_LIST: &str = concatcp!(NOSHOT_DIR, "allow.list");
-    pub const NOSHOT_SETTINGS_CONF: &str = concatcp!(NOSHOT_DIR, "settings.conf");
-    pub const NOSHOT_DISABLE_SYSTEM: &str = concatcp!(NOSHOT_DIR, "disable_system");
-    pub const NOSHOT_MODE_COPY: &str = concatcp!(NOSHOT_DIR, "mode");
-    pub const NOSHOT_ZYGISK_DIR: &str = concatcp!(NOSHOT_DIR, "zygisk/");
-    pub const NOSHOT_SYSTEM_MODE: &str = "/data/system/noshot_mode";
-    pub const NOSHOT_SYSTEM_PLAN: &str = "/data/system/noshot_plan";
-    pub const NOSHOT_SYSTEM_STATE: &str = "/data/system/noshot_state";
-    pub const NOSHOT_SYSTEM_GUARD: &str = "/data/system/noshot_guard";
-    pub const NOSHOT_SYSTEM_ATTEMPT: &str = "/data/system/noshot_attempt";
-    pub const NOSHOT_SYSTEM_DISABLE: &str = "/data/system/noshot_disable";
-    pub const NOSHOT_STANDALONE_DIR: &str = "/data/adb/modules/noshot_zygisk";
+    pub const BOOT_SESSION_PATH: &str = concatcp!(WORKING_DIR, ".boot_session.json");
+    pub const SUSFS_LOADED_HASH_PATH: &str = concatcp!(WORKING_DIR, "susfs/.loaded_hash");
+    pub const NOMOUNT_LOADED_HASH_PATH: &str = concatcp!(WORKING_DIR, "nomount/.loaded_hash");
+    pub const ZYGISK_RUNNING_HASH_PATH: &str = concatcp!(BUILTIN_ZYGISK_DIR, ".running_hash");
+    pub const KSUD_HASH: &str = match option_env!("KSU_KSUD_HASH") {
+        Some(v) => v,
+        None => "unknown",
+    };
+    pub const USERSPACE_HASH: &str = match option_env!("KSU_USERSPACE_HASH") {
+        Some(v) => v,
+        None => "unknown",
+    };
+    pub const SUSFS_HASH: &str = match option_env!("KSU_SUSFS_HASH") {
+        Some(v) => v,
+        None => "unknown",
+    };
+    pub const NOMOUNT_HASH: &str = match option_env!("KSU_NOMOUNT_HASH") {
+        Some(v) => v,
+        None => "unknown",
+    };
+    pub const ZYGISK_HASH: &str = match option_env!("KSU_ZYGISK_HASH") {
+        Some(v) => v,
+        None => "unknown",
+    };
 
     #[derive(Serialize)]
     pub struct MountInfo {

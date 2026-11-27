@@ -28,6 +28,7 @@ import org.uranxsu.manager.data.count.CountRepository
 import org.uranxsu.manager.data.download.DownloadRepository
 import org.uranxsu.manager.data.file.ModuleFileRepository
 import org.uranxsu.manager.data.flash.FlashRepository
+import org.uranxsu.manager.data.health.ComponentHealthRepository
 import org.uranxsu.manager.data.kernel.KernelRepository
 import org.uranxsu.manager.data.kernel.UmountRepository
 import org.uranxsu.manager.data.ksud.KsudIntegrityRepository
@@ -45,7 +46,6 @@ import org.uranxsu.manager.data.mount.MountRepository
 import org.uranxsu.manager.data.network.NetworkRequestRepository
 import org.uranxsu.manager.data.network.NetworkStatusRepository
 import org.uranxsu.manager.data.network.WebResourceRepository
-import org.uranxsu.manager.data.noshot.NoShotRepository
 import org.uranxsu.manager.data.packageinfo.AppIconDataSource
 import org.uranxsu.manager.data.packageinfo.InstalledPackageCache
 import org.uranxsu.manager.data.packageinfo.InstalledPackageRepository
@@ -208,7 +208,6 @@ import org.uranxsu.manager.ui.viewmodel.ModuleRepoViewModel
 import org.uranxsu.manager.ui.viewmodel.ModuleViewModel
 import org.uranxsu.manager.ui.viewmodel.MountSettingsViewModel
 import org.uranxsu.manager.ui.viewmodel.NoMountViewModel
-import org.uranxsu.manager.ui.viewmodel.NoShotViewModel
 import org.uranxsu.manager.ui.viewmodel.RepositorySourcesViewModel
 import org.uranxsu.manager.ui.viewmodel.ScriptRunViewModel
 import org.uranxsu.manager.ui.viewmodel.SettingsViewModel
@@ -321,7 +320,7 @@ val repositoryModule = module {
     singleOf(::SuSFSRepository)
     singleOf(::MountRepository)
     singleOf(::ZygiskRepository)
-    singleOf(::NoShotRepository)
+    singleOf(::ComponentHealthRepository)
     singleOf(::MonetCompatColorSource)
     singleOf(::ThemeRepository)
     single {
@@ -486,7 +485,6 @@ val viewModelModule = module {
     viewModelOf(::MountSettingsViewModel)
     viewModelOf(::NoMountViewModel)
     viewModelOf(::BuiltinZygiskViewModel)
-    viewModelOf(::NoShotViewModel)
     viewModelOf(::SystemHealthViewModel)
     viewModel { parameters -> ModuleRepoViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), parameters.getOrNull<String>()) }
     viewModel { parameters -> ModuleDetailViewModel(parameters[0], parameters[1], get(), get(), get(), get(), get(), get(), get()) }

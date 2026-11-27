@@ -47,7 +47,6 @@ import androidx.compose.material.icons.twotone.RemoveModerator
 import androidx.compose.material.icons.twotone.RestartAlt
 import androidx.compose.material.icons.twotone.Save
 import androidx.compose.material.icons.twotone.Science
-import androidx.compose.material.icons.twotone.ScreenshotMonitor
 import androidx.compose.material.icons.twotone.Security
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.Share
@@ -531,7 +530,7 @@ fun SettingsPage(bottomPadding: Dp) {
 
                         item(visible = homeState.systemStatus.isFullFeatured) {
                             val mountStatus = mountUiState.status
-                            val mountModes = remember { listOf("no_mount", "metamodule", "disabled") }
+                            val mountModes = remember { listOf("no_mount", "metamodule") }
                             val externalMetaOptionLabel = if (mountStatus.externalMetamoduleId.isNotBlank()) {
                                 val displayName = mountStatus.externalMetamoduleName.ifBlank {
                                     mountStatus.externalMetamoduleId
@@ -543,9 +542,8 @@ fun SettingsPage(bottomPadding: Dp) {
                             val mountModeItems = listOf(
                                 stringResource(R.string.mount_mode_nomount_title),
                                 externalMetaOptionLabel,
-                                stringResource(R.string.mount_mode_disabled),
                             )
-                            val selectedMountModeIdx = mountModes.indexOf(mountStatus.mode).coerceAtLeast(0)
+                            val selectedMountModeIdx = if (mountStatus.mode == "no_mount") 0 else 1
                             val modeSavedMsg = stringResource(R.string.mount_mode_saved_reboot)
                             val modeFailedMsg = stringResource(R.string.mount_operation_failed)
                             SettingsChooseWidget(
@@ -649,17 +647,6 @@ fun SettingsPage(bottomPadding: Dp) {
                                 description = stringResource(R.string.builtin_zygisk_settings_summary),
                                 onClick = {
                                     navigator.push(Route.BuiltinZygisk)
-                                },
-                            )
-                        }
-
-                        item(visible = homeState.systemStatus.isFullFeatured) {
-                            SettingsJumpPageWidget(
-                                icon = Icons.TwoTone.ScreenshotMonitor,
-                                title = customText(CustomTextKey.TOOL_NOSHOT),
-                                description = stringResource(R.string.noshot_summary),
-                                onClick = {
-                                    navigator.push(Route.NoShot)
                                 },
                             )
                         }

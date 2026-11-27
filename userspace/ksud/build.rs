@@ -369,6 +369,113 @@ fn build_mkbootfs(out_directory: &Path) {
     }
 }
 
+fn parse_hex_words<const N: usize>(hex: &str) -> [u32; N] {
+    let mut out = [0u32; N];
+    for (slot, chunk) in out.iter_mut().zip(hex.as_bytes().chunks_exact(8)) {
+        let s = std::str::from_utf8(chunk).expect("valid utf8 hex");
+        *slot = u32::from_str_radix(s, 16).expect("valid u32 hex");
+    }
+    out
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    const H0_HEX: &str = "6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19";
+    const K_HEX: &str = concat!(
+        "428a2f9871374491b5c0fbcfe9b5dba53956c25b59f111f1923f82a4ab1c5ed5",
+        "d807aa9812835b01243185be550c7dc372be5d7480deb1fe9bdc06a7c19bf174",
+        "e49b69c1efbe47860fc19dc6240ca1cc2de92c6f4a7484aa5cb0a9dc76f988da",
+        "983e5152a831c66db00327c8bf597fc7c6e00bf3d5a7914706ca635114292967",
+        "27b70a852e1b21384d2c6dfc53380d13650a7354766a0abb81c2c92e92722c85",
+        "a2bfe8a1a81a664bc24b8b70c76c51a3d192e819d6990624f40e3585106aa070",
+        "19a4c1161e376c082748774c34b0bcb5391c0cb34ed8aa4a5b9cca4f682e6ff3",
+        "748f82ee78a5636f84c878148cc7020890befffaa4506cebbef9a3f7c67178f2",
+    );
+    let k_words: [u32; 64] = parse_hex_words(K_HEX);
+    let mut h: [u32; 8] = parse_hex_words(H0_HEX);
+    let bit_len = (data.len() as u64).wrapping_mul(8);
+    let mut padded = data.to_vec();
+    padded.push(0x80);
+    while (padded.len() % 64) != 56 {
+        padded.push(0);
+    }
+    padded.extend_from_slice(&bit_len.to_be_bytes());
+
+    for chunk in padded.chunks_exact(64) {
+        let mut w = [0u32; 64];
+        for (dst, word) in w.iter_mut().zip(chunk.chunks_exact(4)) {
+            *dst = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
+        }
+        let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = h;
+        for (&k, &w_i) in k_words.iter().zip(w.iter()) {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ ((!e) & g);
+            let temp1 = hh
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(k)
+                .wrapping_add(w_i);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0.wrapping_add(maj);
+
+            hh = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temp1);
+            d = c;
+            c = b;
+            b = a;
+            a = temp1.wrapping_add(temp2);
+        }
+        for (slot, delta) in h.iter_mut().zip([a, b, c, d, e, f, g, hh]) {
+            *slot = slot.wrapping_add(delta);
+        }
+    }
+    let mut out = String::with_capacity(64);
+    for word in h {
+        use std::fmt::Write;
+        let _ = write!(out, "{word:08x}");
+    }
+    out
+}
+
+fn git_tree_hash(paths: &[&str]) -> String {
+    let mut resolved = Vec::with_capacity(paths.len());
+    for path in paths {
+        let spec = format!("HEAD:{path}");
+        let Ok(output) = Command::new("git")
+            .args(["rev-parse", "--verify", "--quiet", &spec])
+            .output()
+        else {
+            continue;
+        };
+        if output.status.success() {
+            let oid = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !oid.is_empty() {
+                resolved.push(oid);
+            }
+        }
+    }
+    if resolved.is_empty() {
+        "unknown".to_string()
+    } else {
+        sha256_hex(resolved.join(":").as_bytes())[..8].to_string()
+    }
+}
+
+fn emit_hash_env(env_key: &str, paths: &[&str]) {
+    let value = env::var(env_key).unwrap_or_else(|_| git_tree_hash(paths));
+    println!("cargo:rustc-env={env_key}={value}");
+}
+
 fn main() {
     assemble_bootstrap();
 
@@ -388,6 +495,31 @@ fn main() {
     }
     println!("cargo:rustc-env=VERSION_CODE={code}");
     println!("cargo:rustc-env=VERSION_NAME={name}");
+    emit_hash_env("KSU_KSUD_HASH", &["userspace/ksud"]);
+    emit_hash_env(
+        "KSU_USERSPACE_HASH",
+        &[
+            "userspace/ksud",
+            "susfs-lkm",
+            "external/nomount",
+            "external/BuiltZygisk",
+        ],
+    );
+    emit_hash_env(
+        "KSU_SUSFS_HASH",
+        &["susfs-lkm", "userspace/ksud/src/android/susfs"],
+    );
+    emit_hash_env(
+        "KSU_NOMOUNT_HASH",
+        &["external/nomount", "userspace/ksud/src/android/mount"],
+    );
+    emit_hash_env(
+        "KSU_ZYGISK_HASH",
+        &[
+            "external/BuiltZygisk",
+            "userspace/ksud/src/android/builtin_zygisk.rs",
+        ],
+    );
 
     let target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not set");
     if target_os == "android" {

@@ -100,7 +100,6 @@ import org.uranxsu.manager.ui.screen.moduleRepo.ModuleRepoScreen
 import org.uranxsu.manager.ui.screen.moduleRepo.OnlineModuleDetailScreen
 import org.uranxsu.manager.ui.screen.mount.MountSettingsScreen
 import org.uranxsu.manager.ui.screen.mount.NoMountManagerScreen
-import org.uranxsu.manager.ui.screen.noshot.NoShotScreen
 import org.uranxsu.manager.ui.screen.susfs.SuSFSConfigScreen
 import org.uranxsu.manager.ui.screen.themeSettings.CustomTextScreen
 import org.uranxsu.manager.ui.screen.themeSettings.ThemeSettingsScreen
@@ -627,17 +626,6 @@ fun NavContainer(
                     useBlur = useBlur,
                 ) {
                     BuiltinZygiskScreen()
-                }
-            }
-            entry<Route.NoShot>(swipeDismiss = swipeBackDirection) { key ->
-                ManagerNavEntry(
-                    interceptPredictiveBack = interceptPredictiveBack,
-                    onBack = onBack,
-                    themeConfig = themeConfig,
-                    backgroundRenderState = backgroundRenderState,
-                    useBlur = useBlur,
-                ) {
-                    NoShotScreen()
                 }
             }
             entry<Route.SystemHealth>(swipeDismiss = swipeBackDirection) { key ->

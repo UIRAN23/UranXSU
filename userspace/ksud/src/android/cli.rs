@@ -9,7 +9,7 @@ use crate::{
     android::{
         debug, dynamic_manager, feature, init_event, ksucalls,
         module::{self, module_config, regenerate_preinit},
-        mount, noshot, profile, sepolicy, su, sulog, susfs, uapi, umount_config, utils,
+        mount, profile, sepolicy, su, sulog, susfs, uapi, umount_config, utils,
     },
     anykernel3::{self, Slot},
     apk_sign, assets,
@@ -172,9 +172,6 @@ enum Commands {
     /// Manage UranXSU built-in mount engine (NoMount)
     Mount(mount::cli::MountArgs),
 
-    /// Manage UranXSU built-in NoShot FLAG_SECURE remover
-    Noshot(noshot::NoshotArgs),
-
     /// Manage UranXSU built-in Zygisk (BuiltZygisk / NyaZygisk)
     Zygisk {
         #[command(subcommand)]
@@ -284,6 +281,9 @@ enum Debug {
 
     /// Print default package name
     Package,
+
+    /// Print boot session and component hash diagnostics as JSON
+    BootSession,
 }
 
 #[derive(clap::Subcommand, Debug)]
@@ -663,7 +663,6 @@ pub fn run() -> Result<()> {
         Commands::AnyKernel3 { zip, slot } => anykernel3::flash(&zip, slot),
         Commands::Susfs(args) => crate::android::susfs::cli::run_main(args),
         Commands::Mount(args) => crate::android::mount::cli::run_main(args),
-        Commands::Noshot(args) => crate::android::noshot::run_main(args),
         Commands::Zygisk { command } => match command {
             ZygiskCommand::On => {
                 crate::android::builtin_zygisk::switch_to(
@@ -1045,6 +1044,7 @@ pub fn run() -> Result<()> {
                 println!("{}", defs::DEFAULT_PACKAGE_NAME);
                 Ok(())
             }
+            Debug::BootSession => crate::android::init_event::print_boot_session_json(),
         },
 
         Commands::BootPatch(boot_patch) => crate::boot_patch::patch(boot_patch),

@@ -23,6 +23,10 @@ val managerPackageName = rootProject.extra["managerPackageName"] as String
 val managerName = rootProject.extra["managerName"] as String
 val bundledLkmHash = rootProject.extra["bundledLkmHash"] as String
 val bundledUserspaceHash = rootProject.extra["bundledUserspaceHash"] as String
+val bundledKsudHash = rootProject.extra["bundledKsudHash"] as String
+val bundledSusfsHash = rootProject.extra["bundledSusfsHash"] as String
+val bundledNomountHash = rootProject.extra["bundledNomountHash"] as String
+val bundledZygiskHash = rootProject.extra["bundledZygiskHash"] as String
 
 apksign {
     storeFileProperty = "KEYSTORE_FILE"
@@ -141,6 +145,10 @@ android {
         buildConfigField("boolean", "IS_PR_BUILD", isPrBuild.toString())
         buildConfigField("String", "BUNDLED_LKM_HASH", "\"$bundledLkmHash\"")
         buildConfigField("String", "BUNDLED_USERSPACE_HASH", "\"$bundledUserspaceHash\"")
+        buildConfigField("String", "BUNDLED_KSUD_HASH", "\"$bundledKsudHash\"")
+        buildConfigField("String", "BUNDLED_SUSFS_HASH", "\"$bundledSusfsHash\"")
+        buildConfigField("String", "BUNDLED_NOMOUNT_HASH", "\"$bundledNomountHash\"")
+        buildConfigField("String", "BUNDLED_ZYGISK_HASH", "\"$bundledZygiskHash\"")
         resValue("string", "app_name", managerName)
 
         externalNativeBuild {

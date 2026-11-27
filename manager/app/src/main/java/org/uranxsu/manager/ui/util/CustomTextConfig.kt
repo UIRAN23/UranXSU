@@ -124,7 +124,6 @@ enum class CustomTextKey(
     ZYGISK_SETTINGS_TITLE("zygisk.settings_title", R.string.builtin_zygisk_title, R.string.builtin_zygisk_title, CustomTextGroup.TOOLS),
     PAGE_DYNAMIC_MANAGERS("page.dynamic_managers", R.string.dynamic_manager_title, R.string.dynamic_manager_title, CustomTextGroup.TOOLS),
     PAGE_UMOUNT("page.umount", R.string.umount_path_manager, R.string.umount_path_manager, CustomTextGroup.TOOLS),
-    TOOL_NOSHOT("tool.noshot", R.string.noshot_title, R.string.noshot_title, CustomTextGroup.TOOLS),
     TOOL_SYSTEM_HEALTH("tool.system_health", R.string.system_health_title, R.string.system_health_title, CustomTextGroup.TOOLS),
     TOOL_CONFIG_BACKUP("tool.config_backup", R.string.backup_section_title, R.string.backup_section_title, CustomTextGroup.TOOLS),
     TOOL_UNINSTALL("tool.uninstall", R.string.settings_uninstall, R.string.settings_uninstall, CustomTextGroup.TOOLS),

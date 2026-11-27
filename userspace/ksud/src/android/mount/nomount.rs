@@ -369,11 +369,16 @@ pub fn ensure_driver_loaded(kmi_override: Option<&str>) -> Result<()> {
 
     let _ = fs::remove_file(&ko_path);
 
-    if query_driver_version().is_none() {
+    let Some(driver_version) = query_driver_version() else {
         bail!("nomount.ko loaded but NoMount driver API did not respond");
-    }
+    };
 
     let _ = fs::write(active_kmi_marker_path(), format!("{kmi}\n"));
+    crate::android::init_event::write_component_marker(
+        defs::NOMOUNT_LOADED_HASH_PATH,
+        defs::NOMOUNT_HASH,
+        &driver_version.to_string(),
+    );
     info!("Built-in NoMount driver loaded ({kmi})");
     Ok(())
 }

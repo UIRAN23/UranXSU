@@ -715,10 +715,8 @@
     <string name="mount_mode_active_title">挂载方式</string>
     <string name="mount_mode_nomount">内置 NoMount (VFS)</string>
     <string name="mount_mode_nomount_desc">原版 NoMount v2.3.1 内核 VFS 路径重定向，无挂载点痕迹</string>
-    <string name="mount_mode_metamodule">外部元模块</string>
-    <string name="mount_mode_metamodule_desc">由用户安装的外部元模块负责挂载</string>
-    <string name="mount_mode_disabled">已禁用</string>
-    <string name="mount_mode_disabled_desc">开机时不挂载模块文件</string>
+    <string name="mount_mode_metamodule">外部元模块 / 无内置</string>
+    <string name="mount_mode_metamodule_desc">使用已安装的外部元模块，或在不安装时不挂载模块</string>
     <string name="mount_mode_saved">挂载模式已保存（重启后完全生效）</string>
     <string name="mount_mode_reboot_hint_title">提示</string>
     <string name="mount_mode_reboot_hint">切换挂载模式将在下次重启后完整生效。</string>

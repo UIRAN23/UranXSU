@@ -1,6 +1,5 @@
 package org.uranxsu.manager.ui.screen.themeSettings
 
-import android.annotation.SuppressLint
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -33,6 +32,7 @@ import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,7 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -78,11 +78,10 @@ import org.uranxsu.manager.ui.util.adaptiveScaffoldWindowInsets
 import org.uranxsu.manager.ui.util.customText
 import org.uranxsu.manager.ui.util.showReplacingSnackbar
 
-@SuppressLint("LocalContextGetResourceValueCall")
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun CustomTextScreen() {
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val themeConfig: ThemeConfig = koinInject()
     val cardConfig: CardConfig = koinInject()
     val customTextConfig: CustomTextConfig = koinInject()
@@ -177,8 +176,8 @@ fun CustomTextScreen() {
                     val customVal = customTexts[textKey.key]
                     if (onlyModified && customVal.isNullOrBlank()) return@filter false
                     if (query.isEmpty()) return@filter true
-                    val name = runCatching { context.getString(textKey.nameRes) }.getOrNull().orEmpty().lowercase()
-                    val defaultVal = runCatching { context.getString(textKey.defaultRes) }.getOrNull().orEmpty().lowercase()
+                    val name = runCatching { resources.getString(textKey.nameRes) }.getOrNull().orEmpty().lowercase()
+                    val defaultVal = runCatching { resources.getString(textKey.defaultRes) }.getOrNull().orEmpty().lowercase()
                     textKey.key.lowercase().contains(query) ||
                         name.contains(query) ||
                         defaultVal.contains(query) ||
@@ -231,7 +230,7 @@ fun CustomTextScreen() {
                             )
                             if (modifiedCount > 0) {
                                 TextButton(onClick = ::confirmResetAll) {
-                                    Text(stringResource(R.string.custom_text_reset_single))
+                                    Text(stringResource(R.string.custom_texts_reset_all))
                                 }
                             }
                         }
@@ -260,6 +259,12 @@ fun CustomTextScreen() {
                     },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = cardConfig.cardAlpha),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = cardConfig.cardAlpha),
+                        unfocusedBorderColor = Color.Transparent,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp),
@@ -319,12 +324,16 @@ fun CustomTextScreen() {
 
             if (visibleGroups.isEmpty()) {
                 item(key = "empty_filter") {
-                    Text(
-                        text = stringResource(R.string.custom_texts_empty_filter),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp),
-                    )
+                    SegmentedColumn(
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                    ) {
+                        item {
+                            SettingsBaseWidget(
+                                icon = Icons.TwoTone.Search,
+                                title = stringResource(R.string.custom_texts_empty_filter),
+                            )
+                        }
+                    }
                 }
             } else {
                 visibleGroups.forEach { (group, keys) ->
@@ -336,7 +345,7 @@ fun CustomTextScreen() {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 24.dp, vertical = 4.dp),
+                                    .padding(start = 32.dp, end = 20.dp, top = 10.dp, bottom = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
@@ -361,12 +370,15 @@ fun CustomTextScreen() {
                                                 }
                                             }
                                         },
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                                     ) {
                                         Text(resetGroupLabel)
                                     }
                                 }
                             }
-                            SegmentedColumn {
+                            SegmentedColumn(
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                            ) {
                                 keys.forEach { textKey ->
                                     item(key = textKey.key) {
                                         val customVal = customTexts[textKey.key]?.takeIf { it.isNotBlank() }

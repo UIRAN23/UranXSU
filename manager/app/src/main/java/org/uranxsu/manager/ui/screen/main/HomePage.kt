@@ -46,11 +46,15 @@ import androidx.compose.material.icons.twotone.FilterList
 import androidx.compose.material.icons.twotone.Group
 import androidx.compose.material.icons.twotone.HealthAndSafety
 import androidx.compose.material.icons.twotone.Info
+import androidx.compose.material.icons.twotone.Layers
 import androidx.compose.material.icons.twotone.Memory
 import androidx.compose.material.icons.twotone.PowerSettingsNew
+import androidx.compose.material.icons.twotone.RestartAlt
+import androidx.compose.material.icons.twotone.Science
 import androidx.compose.material.icons.twotone.Security
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.Smartphone
+import androidx.compose.material.icons.twotone.Sync
 import androidx.compose.material.icons.twotone.Tag
 import androidx.compose.material.icons.twotone.TaskAlt
 import androidx.compose.material.icons.twotone.Tune
@@ -112,20 +116,31 @@ import org.uranxsu.manager.BuildConfig
 import org.uranxsu.manager.Natives.KernelPatchImplementation
 import org.uranxsu.manager.R
 import org.uranxsu.manager.data.ksud.KsudSyncStatus
+import org.uranxsu.manager.domain.model.ComponentHealthSummary
+import org.uranxsu.manager.domain.model.ComponentRebootReason
+import org.uranxsu.manager.domain.model.HealthComponentId
 import org.uranxsu.manager.domain.model.HomeSystemInfo
 import org.uranxsu.manager.domain.model.KernelStatus
 import org.uranxsu.manager.domain.model.ManagerUpdateChannel
 import org.uranxsu.manager.domain.model.ManagerUpdateInfo
 import org.uranxsu.manager.domain.model.UpdateImpact
+import org.uranxsu.manager.domain.model.requiresReboot
 import org.uranxsu.manager.domain.usecase.EnqueueManagerUpdateUseCase
 import org.uranxsu.manager.magica.MagicaService
+import org.uranxsu.manager.ui.component.ConfirmResult
+import org.uranxsu.manager.ui.component.KernelLkmDialog
 import org.uranxsu.manager.ui.component.KsuIsValid
+import org.uranxsu.manager.ui.component.KsudDaemonDialog
 import org.uranxsu.manager.ui.component.SwipeableSnackbarHost
 import org.uranxsu.manager.ui.component.WarningCard
+import org.uranxsu.manager.ui.component.componentDescriptionText
+import org.uranxsu.manager.ui.component.componentRebootReason
+import org.uranxsu.manager.ui.component.rebootRequiredNames
 import org.uranxsu.manager.ui.component.rememberConfirmDialog
 import org.uranxsu.manager.ui.component.rememberLoadingDialog
 import org.uranxsu.manager.ui.component.settings.SegmentedColumn
 import org.uranxsu.manager.ui.component.settings.SettingsBaseWidget
+import org.uranxsu.manager.ui.component.settings.SettingsJumpPageWidget
 import org.uranxsu.manager.ui.navigation.LocalNavigator
 import org.uranxsu.manager.ui.navigation.Route
 import org.uranxsu.manager.ui.screen.LabelText
@@ -377,8 +392,9 @@ fun HomePage(
                         }
                     },
                 )
+                Spacer(modifier = Modifier.height(10.dp))
             }
-            Spacer(modifier = Modifier.height(10.dp))
+            val rebootConfirmDialog = rememberConfirmDialog()
             if (uiState.systemStatus.needsLkmUpdate) {
                 WarningCard(
                     message = stringResource(
@@ -427,6 +443,44 @@ fun HomePage(
                 )
                 Spacer(modifier = Modifier.height(10.dp))
             }
+            val componentHealth = uiState.systemInfo.componentHealth
+            val nonLkmRebootIds = componentHealth?.componentsNeedingReboot.orEmpty().filter {
+                !(uiState.systemStatus.needsLkmUpdate && it == HealthComponentId.LKM)
+            }
+            if (uiState.systemStatus.isManager &&
+                componentHealth != null &&
+                nonLkmRebootIds.isNotEmpty()
+            ) {
+                val rebootNames = componentHealth.rebootRequiredNames()
+                val rebootConfirmTitle = stringResource(R.string.health_reboot_confirm_title)
+                val rebootConfirmBody = stringResource(R.string.health_reboot_confirm_body, rebootNames)
+                val rebootActionLabel = stringResource(R.string.health_reboot_action)
+                val cancelLabel = stringResource(android.R.string.cancel)
+                WarningCard(
+                    message = stringResource(R.string.health_reboot_banner, rebootNames),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.TwoTone.RestartAlt,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    onClick = {
+                        scope.launch {
+                            if (rebootConfirmDialog.awaitConfirm(
+                                    title = rebootConfirmTitle,
+                                    content = rebootConfirmBody,
+                                    confirm = rebootActionLabel,
+                                    dismiss = cancelLabel,
+                                ) == ConfirmResult.Confirmed
+                            ) {
+                                viewModel.dispatch(HomeUiAction.Reboot(""))
+                            }
+                        }
+                    },
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
             ManagerUpdateCard(uiState.stableManagerUpdate)
             ManagerUpdateCard(uiState.betaManagerUpdate)
             if (uiState.isBetaManagerUpdateCheckFailed) {
@@ -450,6 +504,21 @@ fun HomePage(
                     isSimpleMode = uiState.isSimpleMode,
                     showHomeCardIcons = uiState.showHomeCardIcons,
                     onSyncKsud = { viewModel.dispatch(HomeUiAction.SyncKsud) },
+                    onReboot = { viewModel.dispatch(HomeUiAction.Reboot("")) },
+                    onOpenInstall = {
+                        if (!uiState.systemStatus.isLateLoadMode) {
+                            navigator.push(Route.Install(preselectedKernelUri = null))
+                        }
+                    },
+                    onOpenNoMount = {
+                        if (uiState.systemInfo.componentHealth?.mountMode == "no_mount") {
+                            navigator.push(Route.NoMountManager)
+                        } else {
+                            navigator.push(Route.MountSettings)
+                        }
+                    },
+                    onOpenSuSFS = { navigator.push(Route.SuSFSConfig) },
+                    onOpenZygisk = { navigator.push(Route.BuiltinZygisk) },
                 )
             }
 
@@ -975,46 +1044,43 @@ private fun InfoCard(
     isSimpleMode: Boolean,
     showHomeCardIcons: Boolean,
     onSyncKsud: () -> Unit = {},
+    onReboot: () -> Unit = {},
+    onOpenInstall: () -> Unit = {},
+    onOpenNoMount: () -> Unit = {},
+    onOpenSuSFS: () -> Unit = {},
+    onOpenZygisk: () -> Unit = {},
 ) {
     val managersList = systemInfo.managersList
     var showKsudDialog by remember { mutableStateOf(false) }
+    var showLkmDialog by remember { mutableStateOf(false) }
 
     val ksudSnapshot = systemInfo.ksudIntegrity
-    if (showKsudDialog && ksudSnapshot != null) {
-        val statusText = when (ksudSnapshot.status) {
-            KsudSyncStatus.UP_TO_DATE -> stringResource(R.string.ksud_status_up_to_date)
-            KsudSyncStatus.NEEDS_SYNC -> stringResource(R.string.ksud_status_needs_sync)
-            KsudSyncStatus.MISSING -> stringResource(R.string.ksud_status_missing)
-            KsudSyncStatus.UNAVAILABLE -> stringResource(R.string.ksud_status_unavailable)
-        }
-        AlertDialog(
-            onDismissRequest = { showKsudDialog = false },
-            title = { Text(stringResource(R.string.home_ksud_daemon)) },
-            text = {
-                Text(
-                    stringResource(
-                        R.string.home_ksud_dialog_body,
-                        statusText,
-                        ksudSnapshot.bundledVersion,
-                        ksudSnapshot.installedVersion ?: stringResource(R.string.ksud_not_installed),
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showKsudDialog = false
-                        onSyncKsud()
-                    },
-                ) {
-                    Text(stringResource(R.string.ksud_sync_action))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showKsudDialog = false }) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            },
+    val componentHealth = systemInfo.componentHealth ?: ComponentHealthSummary(
+        isFullFeatured = systemStatus.isFullFeatured,
+        lkmMode = systemStatus.lkmMode,
+        isLateLoadMode = systemStatus.isLateLoadMode,
+        runtimeLkmHash = systemStatus.runtimeLkmHash,
+        bundledLkmHash = BuildConfig.BUNDLED_LKM_HASH,
+        kernelUapiVersion = systemStatus.kernelUAPIVersion,
+        managerUapiVersion = systemStatus.managerUAPIVersion,
+        ksudIntegrity = ksudSnapshot ?: org.uranxsu.manager.data.ksud.KsudIntegritySnapshot(),
+    )
+
+    if (showKsudDialog) {
+        KsudDaemonDialog(
+            health = componentHealth,
+            onDismiss = { showKsudDialog = false },
+            onSync = onSyncKsud,
+            onReboot = onReboot,
+        )
+    }
+
+    if (showLkmDialog) {
+        KernelLkmDialog(
+            health = componentHealth,
+            onDismiss = { showLkmDialog = false },
+            onOpenInstall = onOpenInstall,
+            onReboot = onReboot,
         )
     }
 
@@ -1071,16 +1137,73 @@ private fun InfoCard(
                 description = "${systemInfo.managerVersion.first} (${systemInfo.managerVersion.second}/${systemInfo.managerVersion.third})",
             )
         }
+    }
 
-        item(
-            visible = !isSimpleMode && systemInfo.susfsEnabled && systemInfo.susfsVersion.isNotEmpty(),
+    if (systemStatus.isManager) {
+        SegmentedColumn(
+            title = stringResource(R.string.health_components_section),
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
         ) {
-            SettingsBaseWidget(
-                icon = Icons.TwoTone.Settings.takeIf { showHomeCardIcons },
-                iconPlaceholder = false,
-                title = customText(CustomTextKey.HOME_INFO_SUSFS),
-                description = systemInfo.susfsVersion,
-            )
+            item {
+                val reason = componentRebootReason(componentHealth, HealthComponentId.LKM)
+                SettingsJumpPageWidget(
+                    icon = Icons.TwoTone.HealthAndSafety.takeIf { showHomeCardIcons },
+                    iconPlaceholder = false,
+                    title = stringResource(R.string.health_lkm_title),
+                    description = componentDescriptionText(componentHealth, HealthComponentId.LKM),
+                    isError = reason.requiresReboot,
+                    onClick = { showLkmDialog = true },
+                )
+            }
+
+            item {
+                val reason = componentRebootReason(componentHealth, HealthComponentId.KSUD)
+                SettingsJumpPageWidget(
+                    icon = Icons.TwoTone.Sync.takeIf { showHomeCardIcons },
+                    iconPlaceholder = false,
+                    title = customText(CustomTextKey.HOME_INFO_KSUD),
+                    description = componentDescriptionText(componentHealth, HealthComponentId.KSUD),
+                    isError = reason.requiresReboot || reason == ComponentRebootReason.KSUD_NEEDS_SYNC,
+                    onClick = { showKsudDialog = true },
+                )
+            }
+
+            item(visible = systemStatus.isFullFeatured) {
+                val reason = componentRebootReason(componentHealth, HealthComponentId.SUSFS)
+                SettingsJumpPageWidget(
+                    icon = Icons.TwoTone.Tune.takeIf { showHomeCardIcons },
+                    iconPlaceholder = false,
+                    title = customText(CustomTextKey.HOME_INFO_SUSFS),
+                    description = componentDescriptionText(componentHealth, HealthComponentId.SUSFS),
+                    isError = reason.requiresReboot,
+                    onClick = { onOpenSuSFS() },
+                )
+            }
+
+            item(visible = systemStatus.isFullFeatured) {
+                val reason = componentRebootReason(componentHealth, HealthComponentId.NOMOUNT)
+                SettingsJumpPageWidget(
+                    icon = Icons.TwoTone.Layers.takeIf { showHomeCardIcons },
+                    iconPlaceholder = false,
+                    title = customText(CustomTextKey.TOOL_NOMOUNT),
+                    description = componentDescriptionText(componentHealth, HealthComponentId.NOMOUNT),
+                    isError = reason.requiresReboot || componentHealth.nomountBootloopDisabled,
+                    onClick = { onOpenNoMount() },
+                )
+            }
+
+            item(visible = systemStatus.isFullFeatured) {
+                val reason = componentRebootReason(componentHealth, HealthComponentId.ZYGISK)
+                SettingsJumpPageWidget(
+                    icon = Icons.TwoTone.Science.takeIf { showHomeCardIcons },
+                    iconPlaceholder = false,
+                    title = customText(CustomTextKey.HOME_INFO_ZYGISK),
+                    description = componentDescriptionText(componentHealth, HealthComponentId.ZYGISK),
+                    isError = reason.requiresReboot,
+                    onClick = { onOpenZygisk() },
+                )
+            }
         }
     }
 
@@ -1166,17 +1289,6 @@ private fun InfoCard(
         }
 
         item(
-            visible = !isSimpleMode && systemInfo.zygiskImplement.isNotEmpty() && systemInfo.zygiskImplement != "None",
-        ) {
-            SettingsBaseWidget(
-                icon = Icons.TwoTone.Extension.takeIf { showHomeCardIcons },
-                iconPlaceholder = false,
-                title = customText(CustomTextKey.HOME_INFO_ZYGISK),
-                description = systemInfo.zygiskImplement,
-            )
-        }
-
-        item(
             visible = !isSimpleMode && systemInfo.metaModuleImplement.isNotEmpty() && systemInfo.metaModuleImplement != "None",
         ) {
             SettingsBaseWidget(
@@ -1184,31 +1296,6 @@ private fun InfoCard(
                 iconPlaceholder = false,
                 title = customText(CustomTextKey.HOME_INFO_METAMODULE),
                 description = systemInfo.metaModuleImplement,
-            )
-        }
-
-        item(
-            visible = systemStatus.isManager && ksudSnapshot != null && ksudSnapshot.status != KsudSyncStatus.UNAVAILABLE,
-        ) {
-            val ksudDesc = when (ksudSnapshot?.status) {
-                KsudSyncStatus.UP_TO_DATE -> ksudSnapshot.installedVersion?.let {
-                    "$it (${stringResource(R.string.ksud_status_up_to_date)})"
-                } ?: stringResource(R.string.ksud_status_up_to_date)
-
-                KsudSyncStatus.NEEDS_SYNC -> ksudSnapshot.installedVersion?.let {
-                    "$it (${stringResource(R.string.ksud_status_needs_sync)})"
-                } ?: stringResource(R.string.ksud_status_needs_sync)
-
-                KsudSyncStatus.MISSING -> stringResource(R.string.ksud_status_missing)
-
-                else -> stringResource(R.string.ksud_status_unavailable)
-            }
-            SettingsBaseWidget(
-                icon = Icons.TwoTone.Memory.takeIf { showHomeCardIcons },
-                iconPlaceholder = false,
-                title = customText(CustomTextKey.HOME_INFO_KSUD),
-                description = ksudDesc,
-                onClick = { showKsudDialog = true },
             )
         }
     }

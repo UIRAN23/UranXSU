@@ -125,6 +125,7 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     }
 
     // 7.5. Load built-in SUSFS LKM and apply early SUSFS settings
+    crate::android::init_event::record_boot_session("late-load");
     crate::android::susfs::lkm::on_late_load();
     crate::android::susfs::init_event::on_post_fs_data();
     crate::android::mount::on_post_fs_data_early();

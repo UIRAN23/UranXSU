@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.uranxsu.manager.R
 import org.uranxsu.manager.data.count.CountRepository
+import org.uranxsu.manager.data.health.ComponentHealthRepository
 import org.uranxsu.manager.data.ksud.KsudIntegrityRepository
 import org.uranxsu.manager.data.module.ModuleRepository
 import org.uranxsu.manager.data.packageinfo.SuperUserRepository
@@ -60,6 +61,7 @@ class HomeViewModel(
     private val countRepository: CountRepository,
     private val ksuCliRepository: KsuCliRepository,
     private val ksudIntegrityRepository: KsudIntegrityRepository,
+    private val componentHealthRepository: ComponentHealthRepository,
     private val checkManagerUpdate: CheckManagerUpdateUseCase,
     private val getKernelStatus: GetKernelStatusUseCase,
     private val getManagerRuntimeInfo: GetManagerRuntimeInfoUseCase,
@@ -149,6 +151,14 @@ class HomeViewModel(
                     val zygiskImplement = zygisk.await()
                     val metaModuleImplement = metamodule.await()
                     val ksudSnapshot = ksudIntegrity.await()
+                    val componentHealth = runCatching {
+                        componentHealthRepository.inspect(
+                            preloadedKernel = kernelStatus,
+                            preloadedKsud = ksudSnapshot,
+                            preloadedSusfs = susfsInfo,
+                            preloadedZygiskImpl = zygiskImplement,
+                        )
+                    }.getOrNull()
                     homeStateRepository.update { current ->
                         current.copy(
                             systemInfo = HomeSystemInfo(
@@ -169,6 +179,7 @@ class HomeViewModel(
                                 metaModuleImplement = metaModuleImplement,
                                 seccompStatus = basicInfo.seccompStatus,
                                 ksudIntegrity = ksudSnapshot,
+                                componentHealth = componentHealth,
                             ),
                             isInitialDataLoaded = true,
                             isExtendedDataLoaded = true,
@@ -217,8 +228,22 @@ class HomeViewModel(
             HomeUiAction.SyncKsud -> viewModelScope.launch {
                 ksudIntegrityRepository.repair()
                     .onSuccess { snapshot ->
+                        val curState = uiState.value
+                        val updatedHealth = runCatching {
+                            componentHealthRepository.inspect(
+                                preloadedKernel = curState.systemStatus,
+                                preloadedKsud = snapshot,
+                            )
+                        }.getOrNull()
                         homeStateRepository.update { cur ->
-                            cur.copy(systemInfo = cur.systemInfo.copy(ksudIntegrity = snapshot))
+                            cur.copy(
+                                systemInfo = cur.systemInfo.copy(
+                                    ksudIntegrity = snapshot,
+                                    componentHealth = updatedHealth ?: cur.systemInfo.componentHealth?.copy(
+                                        ksudIntegrity = snapshot,
+                                    ),
+                                ),
+                            )
                         }
                         mutableEvents.tryEmit(HomeUiEvent.Info(R.string.ksud_sync_success))
                     }

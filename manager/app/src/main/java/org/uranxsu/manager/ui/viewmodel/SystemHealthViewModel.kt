@@ -15,21 +15,18 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.uranxsu.manager.BuildConfig
 import org.uranxsu.manager.Natives
 import org.uranxsu.manager.data.backup.BackupInspection
 import org.uranxsu.manager.data.backup.BackupManifest
 import org.uranxsu.manager.data.backup.BackupRestoreSummary
 import org.uranxsu.manager.data.backup.BackupSection
 import org.uranxsu.manager.data.backup.ConfigBackupManager
-import org.uranxsu.manager.data.kernel.KernelRepository
+import org.uranxsu.manager.data.health.ComponentHealthRepository
 import org.uranxsu.manager.data.ksud.KsudIntegrityRepository
 import org.uranxsu.manager.data.ksud.KsudIntegritySnapshot
-import org.uranxsu.manager.data.mount.MountRepository
-import org.uranxsu.manager.data.noshot.NoShotRepository
 import org.uranxsu.manager.data.shell.KsuCliRepository
-import org.uranxsu.manager.data.susfs.SuSFSRepository
-import org.uranxsu.manager.data.zygisk.ZygiskRepository
+import org.uranxsu.manager.domain.model.ComponentHealthSummary
+import org.uranxsu.manager.domain.usecase.RebootUseCase
 
 enum class CleanupItemId {
     OVERLAYIMG,
@@ -48,37 +45,18 @@ data class CleanupEntry(
 data class SystemHealthUiState(
     val isRefreshing: Boolean = false,
     val isBusy: Boolean = false,
-    val isFullFeatured: Boolean = false,
-    val lkmMode: Boolean? = null,
-    val runtimeLkmHash: String? = null,
-    val bundledLkmHash: String = BuildConfig.BUNDLED_LKM_HASH,
-    val needsLkmUpdate: Boolean = false,
-    val ksudIntegrity: KsudIntegritySnapshot = KsudIntegritySnapshot(),
-    val nomountReady: Boolean = false,
-    val nomountVersion: String = "",
-    val nomountRules: Int = 0,
-    val susfsVersion: String = "",
-    val susfsVariant: String = "",
-    val susfsLkmLoaded: Boolean = false,
-    val zygiskEnabled: Boolean = false,
-    val zygiskRunning: Boolean = false,
-    val noshotEnabled: Boolean = false,
-    val noshotMode: String = "client",
-    val noshotBootloopDisabled: Boolean = false,
+    val health: ComponentHealthSummary = ComponentHealthSummary(),
     val cleanupEntries: List<CleanupEntry> = emptyList(),
     val totalCleanableBytes: Long = 0L,
 )
 
 class SystemHealthViewModel(
     private val application: Application,
-    private val kernelRepository: KernelRepository,
+    private val componentHealthRepository: ComponentHealthRepository,
     private val ksudIntegrityRepository: KsudIntegrityRepository,
-    private val mountRepository: MountRepository,
-    private val suSFSRepository: SuSFSRepository,
-    private val zygiskRepository: ZygiskRepository,
-    private val noShotRepository: NoShotRepository,
     private val ksuCliRepository: KsuCliRepository,
     private val configBackupManager: ConfigBackupManager,
+    private val rebootUseCase: RebootUseCase,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(SystemHealthUiState())
     val state: StateFlow<SystemHealthUiState> = mutableState.asStateFlow()
@@ -91,44 +69,18 @@ class SystemHealthViewModel(
         viewModelScope.launch {
             mutableState.update { it.copy(isRefreshing = true) }
             val loaded = coroutineScope {
-                val kernelDeferred = async { runCatching { kernelRepository.getStatus() }.getOrNull() }
-                val ksudDeferred = async { runCatching { ksudIntegrityRepository.checkStatus() }.getOrDefault(KsudIntegritySnapshot()) }
-                val mountDeferred = async { runCatching { mountRepository.getNoMountStatus() }.getOrNull() }
-                val susfsDeferred = async { runCatching { suSFSRepository.loadStatusInfo(true) }.getOrNull() }
-                val susfsLkmDeferred = async { runCatching { suSFSRepository.loadLkmStatus(true) }.getOrNull() }
-                val zygiskDeferred = async { runCatching { zygiskRepository.getStatus() }.getOrNull() }
-                val noshotDeferred = async { runCatching { noShotRepository.getStatus() }.getOrNull() }
+                val healthDeferred = async {
+                    runCatching { componentHealthRepository.inspect() }.getOrDefault(ComponentHealthSummary())
+                }
                 val cleanupDeferred = async { scanLeftovers() }
 
-                val kernel = kernelDeferred.await()
-                val ksud = ksudDeferred.await()
-                val nomount = mountDeferred.await()
-                val susfs = susfsDeferred.await()
-                val susfsLkm = susfsLkmDeferred.await()
-                val zygisk = zygiskDeferred.await()
-                val noshot = noshotDeferred.await()
+                val health = healthDeferred.await()
                 val cleanup = cleanupDeferred.await()
 
                 SystemHealthUiState(
                     isRefreshing = false,
                     isBusy = mutableState.value.isBusy,
-                    isFullFeatured = kernel?.isFullFeatured == true,
-                    lkmMode = kernel?.lkmMode,
-                    runtimeLkmHash = kernel?.runtimeLkmHash,
-                    bundledLkmHash = BuildConfig.BUNDLED_LKM_HASH,
-                    needsLkmUpdate = kernel?.needsLkmUpdate == true,
-                    ksudIntegrity = ksud,
-                    nomountReady = nomount?.driverReady == true,
-                    nomountVersion = nomount?.driverVersion.orEmpty(),
-                    nomountRules = nomount?.ruleCount ?: 0,
-                    susfsVersion = susfs?.version.orEmpty(),
-                    susfsVariant = susfs?.variant.orEmpty(),
-                    susfsLkmLoaded = susfsLkm?.lkmLoaded == true,
-                    zygiskEnabled = zygisk?.enabled == true,
-                    zygiskRunning = zygisk?.fullyActive == true || zygisk?.daemonRunning == true,
-                    noshotEnabled = noshot?.enabled == true,
-                    noshotMode = noshot?.runtimeMode.orEmpty().ifBlank { "client" },
-                    noshotBootloopDisabled = noshot?.bootloopDisabled == true,
+                    health = health,
                     cleanupEntries = cleanup,
                     totalCleanableBytes = cleanup.sumOf { it.sizeBytes },
                 )
@@ -142,13 +94,22 @@ class SystemHealthViewModel(
         return try {
             val result = ksudIntegrityRepository.repair()
             result.onSuccess { snapshot ->
-                mutableState.update { it.copy(ksudIntegrity = snapshot) }
+                val updatedHealth = runCatching {
+                    componentHealthRepository.inspect(preloadedKsud = snapshot)
+                }.getOrNull()
+                mutableState.update { cur ->
+                    cur.copy(
+                        health = updatedHealth ?: cur.health.copy(ksudIntegrity = snapshot),
+                    )
+                }
             }
             result
         } finally {
             mutableState.update { it.copy(isBusy = false) }
         }
     }
+
+    suspend fun reboot(reason: String = ""): Result<Unit> = rebootUseCase(reason)
 
     suspend fun cleanItem(id: CleanupItemId): Long = withContext(Dispatchers.IO) {
         mutableState.update { it.copy(isBusy = true) }

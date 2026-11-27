@@ -36,6 +36,7 @@ data class HomeSystemInfo(
     val metaModuleImplement: String = "",
     val seccompStatus: Int = -1,
     val ksudIntegrity: KsudIntegritySnapshot? = null,
+    val componentHealth: ComponentHealthSummary? = null,
 )
 
 data class HomeDashboardState(

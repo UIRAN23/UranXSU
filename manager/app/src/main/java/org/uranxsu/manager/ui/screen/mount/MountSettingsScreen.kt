@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.twotone.Album
 import androidx.compose.material.icons.twotone.Extension
 import androidx.compose.material.icons.twotone.FolderSpecial
 import androidx.compose.material.icons.twotone.Info
@@ -74,19 +73,17 @@ fun MountSettingsScreen() {
     }
 
     val modeKeys = remember {
-        listOf("no_mount", "metamodule", "disabled")
+        listOf("no_mount", "metamodule")
     }
     val modeLabels = listOf(
         stringResource(R.string.mount_mode_nomount),
         stringResource(R.string.mount_mode_metamodule),
-        stringResource(R.string.mount_mode_disabled),
     )
     val modeDescriptions = listOf(
         stringResource(R.string.mount_mode_nomount_desc),
         stringResource(R.string.mount_mode_metamodule_desc),
-        stringResource(R.string.mount_mode_disabled_desc),
     )
-    val selectedModeIndex = modeKeys.indexOf(uiState.status.mode).coerceAtLeast(0)
+    val selectedModeIndex = if (uiState.status.mode == "no_mount") 0 else 1
     val modeSavedMsg = stringResource(R.string.mount_mode_saved)
     val opFailedMsg = stringResource(R.string.mount_operation_failed)
 

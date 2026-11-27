@@ -37,8 +37,6 @@ pub const MAX_LOG_LEVEL: LevelFilter = LevelFilter::Info;
 /// Named absolutely rather than resolved against the working directory, which a reinstall
 /// or hot install invalidates by renaming the live module directory away.
 pub const PATH_MODULES_DIR: &str = "/data/adb/modules";
-pub const PATH_BUILTIN_NOSHOT_DIR: &str = "/data/adb/ksu/noshot";
-pub const BUILTIN_NOSHOT_NAME: &str = "noshot";
 
 // --- IPC Constants ---
 // These are magic numbers used in communication with the controller.

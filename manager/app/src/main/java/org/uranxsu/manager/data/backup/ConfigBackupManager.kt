@@ -41,7 +41,6 @@ enum class BackupSection(val id: String) {
     ALLOWLIST("allowlist"),
     SUSFS("susfs"),
     NOMOUNT("nomount"),
-    NOSHOT("noshot"),
     APPEARANCE("appearance"),
     ;
 
@@ -110,13 +109,6 @@ class ConfigBackupManager(
             "nomount/dump_rules" to "/data/adb/nomount/dump_rules",
         )
 
-        private val NOSHOT_FILES = listOf(
-            "noshot/allow.list" to "/data/adb/ksu/noshot/allow.list",
-            "noshot/settings.conf" to "/data/adb/ksu/noshot/settings.conf",
-            "noshot/enabled" to "/data/adb/ksu/noshot/enabled",
-            "noshot/disable_system" to "/data/adb/ksu/noshot/disable_system",
-        )
-
         fun backupFileName(now: Date = Date()): String {
             val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(now)
             return "UranXSU-backup-$stamp$BACKUP_EXTENSION"
@@ -159,17 +151,6 @@ class ConfigBackupManager(
                     }
                 }
                 if (added) includedSections += BackupSection.NOMOUNT
-            }
-
-            if (BackupSection.NOSHOT in sections && canUseRoot) {
-                var added = false
-                NOSHOT_FILES.forEach { (entry, path) ->
-                    readRootFileBytes(path)?.let { bytes ->
-                        stagedEntries[entry] = bytes
-                        added = true
-                    }
-                }
-                if (added) includedSections += BackupSection.NOSHOT
             }
 
             if (BackupSection.APPEARANCE in sections) {
@@ -243,8 +224,6 @@ class ConfigBackupManager(
                                 name.startsWith("susfs/") -> detected += BackupSection.SUSFS
 
                                 name.startsWith("nomount/") -> detected += BackupSection.NOMOUNT
-
-                                name.startsWith("noshot/") -> detected += BackupSection.NOSHOT
 
                                 name == APPEARANCE_ENTRY -> detected += BackupSection.APPEARANCE
                             }
@@ -370,34 +349,6 @@ class ConfigBackupManager(
                     }
                 }
 
-                if (BackupSection.NOSHOT in sections) {
-                    val present = NOSHOT_FILES.mapNotNull { (entry, path) ->
-                        extracted[entry]?.let { it to path }
-                    }
-                    if (present.isNotEmpty()) {
-                        runCatching {
-                            check(canUseRoot) { "Root unavailable" }
-                            val shell = ksuCliRepository.getRootShell()
-                            ShellUtils.fastCmdResult(shell, "mkdir -p /data/adb/ksu/noshot && chmod 0755 /data/adb/ksu/noshot")
-                            present.forEach { (local, dst) ->
-                                check(writeRootFileFromLocal(local, dst, "0644")) {
-                                    "Failed writing $dst"
-                                }
-                            }
-                            val ksud = KsuCliRepository.shellQuote(ksuCliRepository.getKsuDaemonPath())
-                            if (extracted.containsKey("noshot/enabled")) {
-                                ShellUtils.fastCmdResult(shell, "$ksud noshot enable")
-                            } else {
-                                ShellUtils.fastCmdResult(shell, "[ ! -f /data/adb/ksu/noshot/enabled ] || $ksud noshot sync-plan")
-                            }
-                        }.onSuccess {
-                            restored += BackupSection.NOSHOT
-                        }.onFailure {
-                            failed[BackupSection.NOSHOT] = it.message ?: "Restore failed"
-                        }
-                    }
-                }
-
                 if (BackupSection.APPEARANCE in sections) {
                     val uxFile = extracted[APPEARANCE_ENTRY]
                     if (uxFile != null) {
@@ -471,7 +422,6 @@ class ConfigBackupManager(
         entryName == ALLOWLIST_ENTRY -> BackupSection.ALLOWLIST in sections
         entryName.startsWith("susfs/") -> BackupSection.SUSFS in sections
         entryName.startsWith("nomount/") -> BackupSection.NOMOUNT in sections
-        entryName.startsWith("noshot/") -> BackupSection.NOSHOT in sections
         entryName == APPEARANCE_ENTRY -> BackupSection.APPEARANCE in sections
         else -> false
     }

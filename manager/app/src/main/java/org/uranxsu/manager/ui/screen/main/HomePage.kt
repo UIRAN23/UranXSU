@@ -133,7 +133,7 @@ import org.uranxsu.manager.ui.component.KsuIsValid
 import org.uranxsu.manager.ui.component.KsudDaemonDialog
 import org.uranxsu.manager.ui.component.SwipeableSnackbarHost
 import org.uranxsu.manager.ui.component.WarningCard
-import org.uranxsu.manager.ui.component.componentDescriptionText
+import org.uranxsu.manager.ui.component.componentHomeDescriptionText
 import org.uranxsu.manager.ui.component.componentRebootReason
 import org.uranxsu.manager.ui.component.rebootRequiredNames
 import org.uranxsu.manager.ui.component.rememberConfirmDialog
@@ -576,17 +576,19 @@ private fun ManagerUpdateCardContent(updateInfo: ManagerUpdateInfo) {
         stringResource(R.string.beta_version_available, updateInfo.versionCode)
     }
     val impactLabel = when (updateInfo.updateImpact) {
+        UpdateImpact.UNKNOWN -> null
         UpdateImpact.APK_ONLY -> stringResource(R.string.update_impact_apk_only)
         UpdateImpact.KSUD_SYNC -> stringResource(R.string.update_impact_ksud_sync)
         UpdateImpact.LKM_UPDATE -> stringResource(R.string.update_impact_lkm_update)
     }
     val updateText = customText(CustomTextKey.HOME_UPDATE_BUTTON)
-    val details = stringResource(
+    val baseDetails = stringResource(
         R.string.manager_update_details,
         updateInfo.versionName,
         updateInfo.versionCode,
         updateInfo.abi,
-    ) + "\n$impactLabel"
+    )
+    val details = if (impactLabel != null) "$baseDetails\n$impactLabel" else baseDetails
     val dialogContent = if (updateInfo.changelog.isBlank()) {
         details
     } else {
@@ -604,7 +606,7 @@ private fun ManagerUpdateCardContent(updateInfo: ManagerUpdateInfo) {
     )
 
     WarningCard(
-        message = "$message • $impactLabel",
+        message = if (impactLabel != null) "$message • $impactLabel" else message,
         color = MaterialTheme.colorScheme.outlineVariant,
         icon = {
             Icon(
@@ -660,7 +662,6 @@ private fun TopBar(
 ) {
     val themeConfig: ThemeConfig = koinInject()
     val cardConfig: CardConfig = koinInject()
-    val navigator = LocalNavigator.current
 
     LargeFlexibleTopAppBar(
         modifier = Modifier.blurEffect(),
@@ -685,27 +686,6 @@ private fun TopBar(
         ),
         actions = {
             if (uiState.isCoreDataLoaded) {
-                // SuSFS 配置按钮 (available for both built-in SUSFS and built-in SUSFS LKM)
-                if (uiState.systemStatus.isFullFeatured) {
-                    IconButton(onClick = {
-                        navigator.push(Route.SuSFSConfig)
-                    }) {
-                        Icon(
-                            imageVector = Icons.TwoTone.Tune,
-                            contentDescription = stringResource(R.string.susfs_config_setting_title),
-                        )
-                    }
-                }
-
-                IconButton(onClick = {
-                    navigator.push(Route.SystemHealth)
-                }) {
-                    Icon(
-                        imageVector = Icons.TwoTone.HealthAndSafety,
-                        contentDescription = customText(CustomTextKey.TOOL_SYSTEM_HEALTH),
-                    )
-                }
-
                 // 重启按钮
                 var showDropdown by remember { mutableStateOf(false) }
                 KsuIsValid(uiState.systemStatus) {
@@ -1151,7 +1131,7 @@ private fun InfoCard(
                     icon = Icons.TwoTone.HealthAndSafety.takeIf { showHomeCardIcons },
                     iconPlaceholder = false,
                     title = stringResource(R.string.health_lkm_title),
-                    description = componentDescriptionText(componentHealth, HealthComponentId.LKM),
+                    description = componentHomeDescriptionText(componentHealth, HealthComponentId.LKM),
                     isError = reason.requiresReboot,
                     onClick = { showLkmDialog = true },
                 )
@@ -1163,7 +1143,7 @@ private fun InfoCard(
                     icon = Icons.TwoTone.Sync.takeIf { showHomeCardIcons },
                     iconPlaceholder = false,
                     title = customText(CustomTextKey.HOME_INFO_KSUD),
-                    description = componentDescriptionText(componentHealth, HealthComponentId.KSUD),
+                    description = componentHomeDescriptionText(componentHealth, HealthComponentId.KSUD),
                     isError = reason.requiresReboot || reason == ComponentRebootReason.KSUD_NEEDS_SYNC,
                     onClick = { showKsudDialog = true },
                 )
@@ -1175,7 +1155,7 @@ private fun InfoCard(
                     icon = Icons.TwoTone.Tune.takeIf { showHomeCardIcons },
                     iconPlaceholder = false,
                     title = customText(CustomTextKey.HOME_INFO_SUSFS),
-                    description = componentDescriptionText(componentHealth, HealthComponentId.SUSFS),
+                    description = componentHomeDescriptionText(componentHealth, HealthComponentId.SUSFS),
                     isError = reason.requiresReboot,
                     onClick = { onOpenSuSFS() },
                 )
@@ -1187,7 +1167,7 @@ private fun InfoCard(
                     icon = Icons.TwoTone.Layers.takeIf { showHomeCardIcons },
                     iconPlaceholder = false,
                     title = customText(CustomTextKey.TOOL_NOMOUNT),
-                    description = componentDescriptionText(componentHealth, HealthComponentId.NOMOUNT),
+                    description = componentHomeDescriptionText(componentHealth, HealthComponentId.NOMOUNT),
                     isError = reason.requiresReboot || componentHealth.nomountBootloopDisabled,
                     onClick = { onOpenNoMount() },
                 )
@@ -1199,7 +1179,7 @@ private fun InfoCard(
                     icon = Icons.TwoTone.Science.takeIf { showHomeCardIcons },
                     iconPlaceholder = false,
                     title = customText(CustomTextKey.HOME_INFO_ZYGISK),
-                    description = componentDescriptionText(componentHealth, HealthComponentId.ZYGISK),
+                    description = componentHomeDescriptionText(componentHealth, HealthComponentId.ZYGISK),
                     isError = reason.requiresReboot,
                     onClick = { onOpenZygisk() },
                 )

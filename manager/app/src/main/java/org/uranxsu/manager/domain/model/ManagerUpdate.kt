@@ -6,6 +6,7 @@ enum class ManagerUpdateChannel {
 }
 
 enum class UpdateImpact {
+    UNKNOWN,
     APK_ONLY,
     KSUD_SYNC,
     LKM_UPDATE,
@@ -31,7 +32,7 @@ data class ManagerUpdateInfo(
     val fileName: String,
     val source: ManagerApkSource,
     val changelog: String = "",
-    val updateImpact: UpdateImpact = UpdateImpact.APK_ONLY,
+    val updateImpact: UpdateImpact = UpdateImpact.UNKNOWN,
     val remoteLkmHash: String? = null,
     val remoteUserspaceHash: String? = null,
 )

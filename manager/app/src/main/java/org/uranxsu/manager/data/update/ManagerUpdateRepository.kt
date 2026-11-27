@@ -107,11 +107,8 @@ class ManagerUpdateRepository(
         ) {
             return UpdateImpact.KSUD_SYNC
         }
-        if (runCatching { Natives.isManager }.getOrDefault(false) &&
-            BuildConfig.VERSION_CODE > 0
-        ) {
-            // Legacy releases without update-meta.json behave as APK updates.
-            return UpdateImpact.APK_ONLY
+        if (remoteLkmHash == null && remoteUserspaceHash == null) {
+            return UpdateImpact.UNKNOWN
         }
         return UpdateImpact.APK_ONLY
     }
@@ -237,7 +234,7 @@ class ManagerUpdateRepository(
         fun toUpdateInfo(
             channel: ManagerUpdateChannel,
             changelog: String = "",
-            updateImpact: UpdateImpact = UpdateImpact.APK_ONLY,
+            updateImpact: UpdateImpact = UpdateImpact.UNKNOWN,
             remoteLkmHash: String? = null,
             remoteUserspaceHash: String? = null,
         ) = ManagerUpdateInfo(

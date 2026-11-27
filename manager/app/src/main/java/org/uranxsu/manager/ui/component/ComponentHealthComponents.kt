@@ -12,6 +12,27 @@ import org.uranxsu.manager.domain.model.ComponentRebootReason
 import org.uranxsu.manager.domain.model.HealthComponentId
 import org.uranxsu.manager.domain.model.requiresReboot
 
+private val ksudVersionPattern = Regex(
+    """^(?:ksud\s+)?([^\s(]+)(?:\s*\(uapi:\s*([^)]+)\))?""",
+    RegexOption.IGNORE_CASE,
+)
+
+private fun formatKsudCompact(raw: String): String {
+    val trimmed = raw.trim()
+    val match = ksudVersionPattern.find(trimmed)
+    val ver = match?.groupValues?.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return trimmed
+    return if (ver.firstOrNull()?.isDigit() == true) "v$ver" else ver
+}
+
+private fun formatKsudDetailed(raw: String): String {
+    val trimmed = raw.trim()
+    val match = ksudVersionPattern.find(trimmed) ?: return trimmed
+    val verRaw = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return trimmed
+    val ver = if (verRaw.firstOrNull()?.isDigit() == true) "v$verRaw" else verRaw
+    val uapi = match.groupValues.getOrNull(2)?.trim()?.takeIf { it.isNotBlank() }
+    return if (uapi != null) "$ver · UAPI $uapi" else ver
+}
+
 @Composable
 fun componentRebootLabel(reason: ComponentRebootReason): String = when (reason) {
     ComponentRebootReason.NONE -> stringResource(R.string.health_reboot_state_none)
@@ -33,8 +54,11 @@ fun componentLiveStateText(
         health.lkmMode != true && health.isFullFeatured ->
             stringResource(R.string.health_live_lkm_builtin)
 
+        health.lkmWorking && !health.runtimeLkmHash.isNullOrBlank() ->
+            stringResource(R.string.health_live_lkm_active, health.runtimeLkmHash)
+
         health.lkmWorking ->
-            stringResource(R.string.health_live_lkm_active, health.runtimeLkmHash ?: "OK")
+            stringResource(R.string.health_live_lkm_active_no_hash)
 
         else ->
             stringResource(R.string.health_live_lkm_inactive)
@@ -43,12 +67,12 @@ fun componentLiveStateText(
     HealthComponentId.KSUD -> when (health.ksudIntegrity.status) {
         KsudSyncStatus.UP_TO_DATE -> stringResource(
             R.string.health_live_ksud_active,
-            health.ksudIntegrity.installedVersion ?: health.ksudIntegrity.bundledVersion,
+            formatKsudDetailed(health.ksudIntegrity.installedVersion ?: health.ksudIntegrity.bundledVersion),
         )
 
         KsudSyncStatus.NEEDS_SYNC -> stringResource(
             R.string.health_live_ksud_needs_sync,
-            health.ksudIntegrity.installedVersion ?: "?",
+            formatKsudDetailed(health.ksudIntegrity.installedVersion ?: "?"),
         )
 
         KsudSyncStatus.MISSING -> stringResource(R.string.health_live_ksud_missing)
@@ -62,16 +86,24 @@ fun componentLiveStateText(
                 health.susfsVersion.takeIf { it.isNotBlank() },
                 health.susfsVariant.takeIf { it.isNotBlank() },
                 health.susfsActiveKmi.takeIf { it.isNotBlank() },
-            ).joinToString(" · ").ifBlank { "OK" }
-            stringResource(R.string.health_live_susfs_lkm, detail)
+            ).joinToString(" · ")
+            if (detail.isNotBlank()) {
+                stringResource(R.string.health_live_susfs_lkm, detail)
+            } else {
+                stringResource(R.string.health_live_susfs_lkm_simple)
+            }
         }
 
         health.susfsWorking -> {
             val detail = listOfNotNull(
                 health.susfsVersion.takeIf { it.isNotBlank() },
                 health.susfsVariant.takeIf { it.isNotBlank() },
-            ).joinToString(" · ").ifBlank { "OK" }
-            stringResource(R.string.health_live_susfs_builtin, detail)
+            ).joinToString(" · ")
+            if (detail.isNotBlank()) {
+                stringResource(R.string.health_live_susfs_builtin, detail)
+            } else {
+                stringResource(R.string.health_live_susfs_builtin_simple)
+            }
         }
 
         else -> stringResource(R.string.health_live_susfs_inactive)
@@ -126,6 +158,108 @@ fun componentLiveStateText(
 }
 
 @Composable
+fun componentCompactStateText(
+    health: ComponentHealthSummary,
+    component: HealthComponentId,
+): String = when (component) {
+    HealthComponentId.LKM -> when {
+        health.lkmMode != true && health.isFullFeatured ->
+            stringResource(R.string.health_compact_lkm_builtin)
+
+        health.lkmWorking && !health.runtimeLkmHash.isNullOrBlank() ->
+            stringResource(R.string.health_compact_lkm_hash, health.runtimeLkmHash)
+
+        health.lkmWorking ->
+            stringResource(R.string.health_compact_lkm_active)
+
+        else ->
+            stringResource(R.string.health_compact_inactive)
+    }
+
+    HealthComponentId.KSUD -> when (health.ksudIntegrity.status) {
+        KsudSyncStatus.UP_TO_DATE -> stringResource(
+            R.string.health_compact_ksud_active,
+            formatKsudCompact(health.ksudIntegrity.installedVersion ?: health.ksudIntegrity.bundledVersion),
+        )
+
+        KsudSyncStatus.NEEDS_SYNC -> stringResource(R.string.health_compact_ksud_needs_sync)
+
+        KsudSyncStatus.MISSING -> stringResource(R.string.health_compact_ksud_missing)
+
+        KsudSyncStatus.UNAVAILABLE -> stringResource(R.string.health_live_ksud_unavailable)
+    }
+
+    HealthComponentId.SUSFS -> when {
+        health.susfsLkmLoaded -> {
+            val ver = health.susfsVersion.takeIf { it.isNotBlank() }
+            if (ver != null) {
+                stringResource(R.string.health_compact_susfs_lkm, ver)
+            } else {
+                stringResource(R.string.health_compact_lkm_active)
+            }
+        }
+
+        health.susfsWorking -> {
+            val ver = health.susfsVersion.takeIf { it.isNotBlank() }
+            if (ver != null) {
+                stringResource(R.string.health_compact_susfs_builtin, ver)
+            } else {
+                stringResource(R.string.health_compact_lkm_builtin)
+            }
+        }
+
+        else -> stringResource(R.string.health_compact_inactive)
+    }
+
+    HealthComponentId.NOMOUNT -> when {
+        health.mountMode == "no_mount" -> when {
+            health.nomountReady -> stringResource(
+                R.string.health_compact_nomount_active,
+                health.nomountVersion.ifBlank { "OK" },
+                health.nomountRules,
+            )
+
+            health.nomountBootloopDisabled ->
+                stringResource(R.string.health_live_nomount_bootloop)
+
+            else ->
+                stringResource(R.string.health_live_nomount_not_loaded)
+        }
+
+        health.nomountReady -> stringResource(
+            R.string.health_compact_nomount_active,
+            health.nomountVersion.ifBlank { "OK" },
+            health.nomountRules,
+        )
+
+        health.externalMetamoduleName.isNotBlank() -> stringResource(
+            R.string.health_live_nomount_external,
+            health.externalMetamoduleName,
+        )
+
+        else -> stringResource(R.string.health_live_nomount_external_none)
+    }
+
+    HealthComponentId.ZYGISK -> when {
+        health.zygiskEnabled -> {
+            val ver = health.zygiskVersion.ifBlank { "BuiltZygisk" }
+            when {
+                health.zygiskInjected -> stringResource(R.string.health_compact_zygisk_injected, ver)
+                health.zygiskRunning -> stringResource(R.string.health_compact_zygisk_running, ver)
+                else -> stringResource(R.string.health_live_zygisk_not_running)
+            }
+        }
+
+        health.zygiskExternalName.isNotBlank() -> stringResource(
+            R.string.health_live_zygisk_external,
+            health.zygiskExternalName,
+        )
+
+        else -> stringResource(R.string.health_live_zygisk_disabled)
+    }
+}
+
+@Composable
 fun componentRebootReason(
     health: ComponentHealthSummary,
     component: HealthComponentId,
@@ -142,9 +276,27 @@ fun componentDescriptionText(
     health: ComponentHealthSummary,
     component: HealthComponentId,
 ): String {
-    val live = stringResource(R.string.health_state_line, componentLiveStateText(health, component))
-    val reboot = componentRebootLabel(componentRebootReason(health, component))
-    return "$live\n$reboot"
+    val live = componentLiveStateText(health, component)
+    val reason = componentRebootReason(health, component)
+    return if (reason.requiresReboot || reason == ComponentRebootReason.KSUD_NEEDS_SYNC) {
+        "$live\n${componentRebootLabel(reason)}"
+    } else {
+        live
+    }
+}
+
+@Composable
+fun componentHomeDescriptionText(
+    health: ComponentHealthSummary,
+    component: HealthComponentId,
+): String {
+    val live = componentCompactStateText(health, component)
+    val reason = componentRebootReason(health, component)
+    return if (reason.requiresReboot || reason == ComponentRebootReason.KSUD_NEEDS_SYNC) {
+        "$live\n${componentRebootLabel(reason)}"
+    } else {
+        live
+    }
 }
 
 @Composable

@@ -104,12 +104,13 @@ jobs:
         mkdir -p "$OUT_DIR"
         OUTPUT_NAME="${{ inputs.kmi }}_susfs.ko"
         cp susfs-lkm/kernel/susfs_guard_lkm.ko "$OUT_DIR/$OUTPUT_NAME"
+        # Strip DWARF debug info only (-d) so susfs_insmod keeps .symtab/.strtab for kallsyms relocation
+        llvm-strip -d "$OUT_DIR/$OUTPUT_NAME"
         ALLOW="init_module,susfs_layers_down,susfs_tw_func,susfs_watch_freeing,hk_own_run,hk_write_run,hk_exec_clear_stopped,hk_nx_clear_page,hk_nx_neighbours"
         if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
         "$PY" susfs-lkm/tools/cfi_sites.py --allow "$ALLOW" "$OUT_DIR/$OUTPUT_NAME"
         test -s "$OUT_DIR/$OUTPUT_NAME"
         readelf -S "$OUT_DIR/$OUTPUT_NAME" | grep -q '\.symtab'
-        # Do NOT strip susfs_guard_lkm.ko: susfs_insmod requires .symtab for kallsyms relocation
         ls -la "$OUT_DIR/$OUTPUT_NAME"
         echo "Size: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
 

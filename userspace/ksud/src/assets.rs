@@ -245,8 +245,7 @@ pub fn get_asset(name: &str) -> Result<std::borrow::Cow<'static, [u8]>> {
             reader.read_to_end(&mut out)?;
             return Ok(std::borrow::Cow::Owned(out));
         }
-        let asset =
-            get_ko_asset(name).ok_or_else(|| anyhow::anyhow!("asset not found: {name}"))?;
+        let asset = get_ko_asset(name).ok_or_else(|| anyhow::anyhow!("asset not found: {name}"))?;
         return Ok(asset.data);
     }
 

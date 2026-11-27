@@ -1707,7 +1707,7 @@ pub fn ensure_monitor() -> Result<()> {
 
 /// Best-effort signal to running BuiltZygisk daemons to rescan loaded modules.
 pub fn refresh_daemon_modules() {
-    use std::io::{Read, Write};
+    use std::io::Read;
     use std::os::unix::net::UnixStream;
 
     const ACTION_REFRESH_MODULES: u8 = 13;

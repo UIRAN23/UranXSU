@@ -414,18 +414,19 @@ pub fn generate_plan() -> Result<()> {
 
     let settings = read_settings();
     let hook = settings.system_hook && !Path::new(defs::NOSHOT_DISABLE_SYSTEM).exists();
-    let plan_gen = file_mtime_secs(defs::NOSHOT_ALLOW_LIST)
-        .max(file_mtime_secs(defs::NOSHOT_SETTINGS_CONF));
+    let plan_gen =
+        file_mtime_secs(defs::NOSHOT_ALLOW_LIST).max(file_mtime_secs(defs::NOSHOT_SETTINGS_CONF));
 
     let users = collect_user_ids();
     let pkg_uids = read_package_uids();
     let targets = read_targets();
 
-    let mut lines = Vec::new();
-    lines.push(format!("hook={}", u8::from(hook)));
-    lines.push(format!("log={}", u8::from(settings.log)));
-    lines.push(format!("capture={}", settings.capture_guard));
-    lines.push(format!("gen={plan_gen}"));
+    let mut lines = vec![
+        format!("hook={}", u8::from(hook)),
+        format!("log={}", u8::from(settings.log)),
+        format!("capture={}", settings.capture_guard),
+        format!("gen={plan_gen}"),
+    ];
 
     let mut seen_pkgs = BTreeSet::new();
     let mut seen_uids = BTreeSet::new();
@@ -523,10 +524,7 @@ fn stage_zygisk_libs() -> Result<()> {
     #[cfg(target_arch = "arm")]
     let mapping: &[(&str, &str)] = &[("noshot_32.so", "armeabi-v7a.so")];
     #[cfg(target_arch = "x86_64")]
-    let mapping: &[(&str, &str)] = &[
-        ("noshot_64.so", "x86_64.so"),
-        ("noshot_32.so", "x86.so"),
-    ];
+    let mapping: &[(&str, &str)] = &[("noshot_64.so", "x86_64.so"), ("noshot_32.so", "x86.so")];
     #[cfg(not(any(target_arch = "aarch64", target_arch = "arm", target_arch = "x86_64")))]
     let mapping: &[(&str, &str)] = &[];
 

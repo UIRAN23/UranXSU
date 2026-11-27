@@ -3,6 +3,7 @@ package org.uranxsu.manager.data.kernel
 import android.app.Application
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.uranxsu.manager.BuildConfig
 import org.uranxsu.manager.Natives
 import org.uranxsu.manager.Natives.KernelPatchImplementation
 import org.uranxsu.manager.data.shell.KsuCliRepository
@@ -17,6 +18,8 @@ class KernelRepository(
     private val application: Application,
     private val ksuCliRepository: KsuCliRepository,
 ) {
+    private val lkmHashRegex = Regex("""\[k:([0-9a-f]{8})]""")
+
     suspend fun getStatus(): KernelStatus = withContext(Dispatchers.IO) {
         val kernelVersion = getKernelVersion()
         val isManager = runCatching { Natives.isManager }.getOrDefault(false)
@@ -24,6 +27,12 @@ class KernelRepository(
         val kernelUapi = if (isManager) Natives.kernelUAPIVersion else null
         val managerUapi = runCatching { Natives.managerUAPIVersion }.getOrDefault(1)
         val fullVersion = runCatching { Natives.getFullVersion() }.getOrDefault("Unknown")
+        val runtimeLkmHash = lkmHashRegex.find(fullVersion)?.groupValues?.getOrNull(1)
+        val lkmMode = ksuVersion?.let { if (kernelVersion.isGKI()) Natives.isLkmMode else null }
+        val needsLkmUpdate = lkmMode == true &&
+            runtimeLkmHash != null &&
+            BuildConfig.BUNDLED_LKM_HASH != "unknown" &&
+            runtimeLkmHash != BuildConfig.BUNDLED_LKM_HASH
         val isRootAvailable = runCatching { ksuCliRepository.rootAvailable() }.getOrDefault(false)
         KernelStatus(
             isManager = isManager,
@@ -31,7 +40,9 @@ class KernelRepository(
             managerUAPIVersion = managerUapi,
             kernelUAPIVersion = kernelUapi,
             ksuFullVersion = "$fullVersion (${Natives.version}/$kernelUapi)",
-            lkmMode = ksuVersion?.let { if (kernelVersion.isGKI()) Natives.isLkmMode else null },
+            runtimeLkmHash = runtimeLkmHash,
+            needsLkmUpdate = needsLkmUpdate,
+            lkmMode = lkmMode,
             kernelVersion = kernelVersion,
             isRootAvailable = isRootAvailable,
             isFullFeatured = isRootAvailable && runCatching { Natives.isFullFeatured() }

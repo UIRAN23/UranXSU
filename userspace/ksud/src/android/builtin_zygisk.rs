@@ -335,7 +335,11 @@ fn daemon_reported_modules(content: &str) -> Vec<(String, DaemonModule)> {
 
 /// Display name and version of an installed module, falling back to its directory id.
 fn module_identity(id: &str) -> (String, String) {
-    let prop = fs::read_to_string(Path::new(MODULE_DIR).join(id).join("module.prop"))
+    let prop_path = Path::new(MODULE_DIR).join(id).join("module.prop");
+    if id == "noshot" && !prop_path.exists() {
+        return ("NoShot (Built-in)".to_owned(), "2.1.1".to_owned());
+    }
+    let prop = fs::read_to_string(prop_path)
         .map_or_else(|_| HashMap::new(), |content| parse_module_prop(&content));
     let name = prop.get("name").cloned().unwrap_or_else(|| id.to_owned());
     let version = prop
@@ -585,6 +589,36 @@ fn installed_modules() -> Vec<InjectedModule> {
             name,
             version,
             kind: if is_next { "next" } else { "zygisk" }.to_owned(),
+            abi,
+            targets: Vec::new(),
+            companion: false,
+            state: "unknown".to_owned(),
+            processes: Vec::new(),
+        });
+    }
+    let builtin_noshot_dir = Path::new(crate::defs::NOSHOT_DIR);
+    let has_noshot = modules
+        .iter()
+        .any(|m| m.id == "noshot_zygisk" || m.id == "noshot");
+    if !has_noshot && builtin_noshot_dir.join("enabled").exists() {
+        let libs = builtin_noshot_dir.join("zygisk");
+        let mut abi = Vec::new();
+        let has = |arch: &str| libs.join(format!("{arch}.so")).exists();
+        if ["arm64-v8a", "x86_64", "riscv64"]
+            .iter()
+            .any(|arch| has(arch))
+        {
+            abi.push("64".to_owned());
+        }
+        if ["armeabi-v7a", "x86"].iter().any(|arch| has(arch)) {
+            abi.push("32".to_owned());
+        }
+        let (name, version) = module_identity("noshot");
+        modules.push(InjectedModule {
+            id: "noshot".to_owned(),
+            name,
+            version,
+            kind: "zygisk".to_owned(),
             abi,
             targets: Vec::new(),
             companion: false,
@@ -1669,6 +1703,28 @@ pub fn ensure_monitor() -> Result<()> {
         bootstrap()?;
     }
     Ok(())
+}
+
+/// Best-effort signal to running BuiltZygisk daemons to rescan loaded modules.
+pub fn refresh_daemon_modules() {
+    use std::io::{Read, Write};
+    use std::os::unix::net::UnixStream;
+
+    const ACTION_REFRESH_MODULES: u8 = 13;
+    for sock_name in ["cp64.sock", "cp32.sock"] {
+        let sock_path = Path::new(BUILTIN_ZYGISK_WORK_DIR).join(sock_name);
+        if !sock_path.exists() {
+            continue;
+        }
+        if let Ok(mut stream) = UnixStream::connect(&sock_path) {
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+            let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+            if stream.write_all(&[ACTION_REFRESH_MODULES]).is_ok() {
+                let mut ack = [0u8; 1];
+                let _ = stream.read_exact(&mut ack);
+            }
+        }
+    }
 }
 
 /// Attach to a zygote that is already running. A normal boot has none yet and the

@@ -1,0 +1,991 @@
+{
+  "schema": 1,
+  "kmi": [
+    "android12-5.10",
+    "android13-5.10",
+    "android13-5.15",
+    "android14-5.15",
+    "android14-6.1",
+    "android15-6.6",
+    "android16-6.12",
+    "android17-6.18"
+  ],
+  "files": {
+    "kernel/btf_layout.c": {
+      "layer": "P",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/btf_layout.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/fsnotify_lifetime.c": {
+      "layer": "P",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/fsnotify_lifetime.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/imports_guard.c": {
+      "layer": "P",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/ksu_allow_gate.c": {
+      "layer": "P",
+      "phase": 17,
+      "budget": 0
+    },
+    "kernel/ksu_allow_gate.h": {
+      "layer": "L",
+      "phase": 17,
+      "budget": 0
+    },
+    "kernel/ksu_umount_gate.c": {
+      "layer": "P",
+      "phase": 17,
+      "budget": 0
+    },
+    "kernel/ksu_umount_gate.h": {
+      "layer": "L",
+      "phase": 17,
+      "budget": 0
+    },
+    "kernel/lsm_hook.c": {
+      "layer": "legacy",
+      "phase": 0,
+      "budget": 999
+    },
+    "kernel/lsm_hook.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/patch_memory.c": {
+      "layer": "P",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/patch_memory.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/spoof_cmdline.c": {
+      "layer": "F",
+      "phase": 8,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/spoof_cmdline_data.c": {
+      "layer": "D",
+      "phase": 8,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/spoof_cmdline_data.h": {
+      "layer": "D",
+      "phase": 8,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/spoof_cmdline_phys.c": {
+      "layer": "P",
+      "phase": 8,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/spoof_cmdline_phys.h": {
+      "layer": "P",
+      "phase": 8,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/spoof_cmdline_policy.c": {
+      "layer": "L",
+      "phase": 8,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/spoof_cmdline_policy.h": {
+      "layer": "L",
+      "phase": 8,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_dirent.c": {
+      "layer": "F",
+      "phase": 9,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_dirent_data.c": {
+      "layer": "D",
+      "phase": 9,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_dirent_data.h": {
+      "layer": "D",
+      "phase": 9,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_dirent_phys.c": {
+      "layer": "P",
+      "phase": 9,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_dirent_phys.h": {
+      "layer": "P",
+      "phase": 9,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_dirent_policy.c": {
+      "layer": "L",
+      "phase": 9,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_dirent_policy.h": {
+      "layer": "L",
+      "phase": 9,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_map.c": {
+      "layer": "legacy",
+      "phase": 0,
+      "budget": 999
+    },
+    "kernel/sus_mount.c": {
+      "layer": "legacy",
+      "phase": 0,
+      "budget": 999
+    },
+    "kernel/sus_mount_identity.c": {
+      "layer": "P",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_identity.h": {
+      "layer": "P",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_idmap.c": {
+      "layer": "D",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/sus_mount_idmap.h": {
+      "layer": "D",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/sus_mount_ns_iter.c": {
+      "layer": "P",
+      "phase": 1,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_mount_ns_iter.h": {
+      "layer": "P",
+      "phase": 1,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_mount_policy.c": {
+      "layer": "P",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_policy.h": {
+      "layer": "P",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_prefix.c": {
+      "layer": "D",
+      "phase": 1,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_mount_prefix.h": {
+      "layer": "D",
+      "phase": 1,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_mount_view.c": {
+      "layer": "P",
+      "phase": 1,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_mount_view.h": {
+      "layer": "D",
+      "phase": 1,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_path.c": {
+      "layer": "legacy",
+      "phase": 0,
+      "budget": 999
+    },
+    "kernel/susfs_create_op.h": {
+      "layer": "P",
+      "phase": 2,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_path_match.h": {
+      "layer": "D",
+      "phase": 2,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_path_data.h": {
+      "layer": "D",
+      "phase": 3,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/sus_path_view.h": {
+      "layer": "L",
+      "phase": 3,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_open_view.h": {
+      "layer": "L",
+      "phase": 4,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_open_data.h": {
+      "layer": "D",
+      "phase": 4,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_kstat_view.h": {
+      "layer": "L",
+      "phase": 5,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_abi.h": {
+      "layer": "D",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_avc_data.c": {
+      "layer": "D",
+      "phase": 6,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_avc_data.h": {
+      "layer": "D",
+      "phase": 6,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_avc_policy.c": {
+      "layer": "L",
+      "phase": 6,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_avc_policy.h": {
+      "layer": "L",
+      "phase": 6,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_avc_spoof.c": {
+      "layer": "F",
+      "phase": 6,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_create_data.c": {
+      "layer": "D",
+      "phase": 2,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_create_data.h": {
+      "layer": "D",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_create_gate.c": {
+      "layer": "F",
+      "phase": 2,
+      "budget": 4,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_create_policy.c": {
+      "layer": "L",
+      "phase": 2,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_create_policy.h": {
+      "layer": "L",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_create_vfs.c": {
+      "layer": "P",
+      "phase": 2,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_create_vfs.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_create_view.h": {
+      "layer": "D",
+      "phase": 1,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_enable_log.c": {
+      "layer": "F",
+      "phase": 14,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_enable_log_data.c": {
+      "layer": "D",
+      "phase": 14,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_enable_log_data.h": {
+      "layer": "D",
+      "phase": 14,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_enable_log_phys.c": {
+      "layer": "P",
+      "phase": 14,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_enable_log_phys.h": {
+      "layer": "P",
+      "phase": 14,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_enable_log_policy.c": {
+      "layer": "L",
+      "phase": 14,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_enable_log_policy.h": {
+      "layer": "L",
+      "phase": 14,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_fp_hook.c": {
+      "layer": "P",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_fp_hook.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_hide_syms.c": {
+      "layer": "F",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_kprobe.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_kstat.c": {
+      "layer": "legacy",
+      "phase": 0,
+      "budget": 999
+    },
+    "kernel/susfs_log.h": {
+      "layer": "L",
+      "phase": 16,
+      "budget": 0
+    },
+    "kernel/susfs_main.c": {
+      "layer": "F",
+      "phase": 13,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_main_data.c": {
+      "layer": "D",
+      "phase": 13,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_main_data.h": {
+      "layer": "D",
+      "phase": 13,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_main_phys.c": {
+      "layer": "P",
+      "phase": 13,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_opath.c": {
+      "layer": "F",
+      "phase": 12,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_opath.h": {
+      "layer": "F",
+      "phase": 12,
+      "budget": 0
+    },
+    "kernel/susfs_opath_data.c": {
+      "layer": "D",
+      "phase": 12,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_opath_data.h": {
+      "layer": "D",
+      "phase": 12,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_opath_phys.c": {
+      "layer": "P",
+      "phase": 12,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_opath_phys.h": {
+      "layer": "P",
+      "phase": 12,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_open_redirect.c": {
+      "layer": "legacy",
+      "phase": 0,
+      "budget": 999
+    },
+    "kernel/susfs_or_entry.c": {
+      "layer": "F",
+      "phase": 11,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_or_entry.h": {
+      "layer": "F",
+      "phase": 11,
+      "budget": 0
+    },
+    "kernel/susfs_or_entry_data.c": {
+      "layer": "D",
+      "phase": 11,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_or_entry_data.h": {
+      "layer": "D",
+      "phase": 11,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_or_entry_phys.c": {
+      "layer": "P",
+      "phase": 11,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_or_entry_phys.h": {
+      "layer": "P",
+      "phase": 11,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_supercall.c": {
+      "layer": "F",
+      "phase": 10,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_supercall_data.c": {
+      "layer": "D",
+      "phase": 10,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_supercall_data.h": {
+      "layer": "D",
+      "phase": 10,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_supercall_phys.c": {
+      "layer": "P",
+      "phase": 10,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_supercall_phys.h": {
+      "layer": "P",
+      "phase": 10,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_supercall_policy.c": {
+      "layer": "L",
+      "phase": 10,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_supercall_policy.h": {
+      "layer": "L",
+      "phase": 10,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_uname.c": {
+      "layer": "F",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/symbol_resolver.c": {
+      "layer": "P",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/symbol_resolver.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_hook_map.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_hook_slots.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_hook_engine.c": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_hook_engine.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_hooks.h": {
+      "layer": "legacy",
+      "phase": 0,
+      "budget": 999
+    },
+    "kernel/susfs_hooks.c": {
+      "layer": "legacy",
+      "phase": 0,
+      "budget": 999
+    },
+    "kernel/susfs_helpers.h": {
+      "layer": "P",
+      "phase": 16,
+      "budget": 0
+    },
+    "kernel/susfs_core.h": {
+      "layer": "P",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/sus_path.h": {
+      "layer": "F",
+      "phase": 16,
+      "budget": 0
+    },
+    "kernel/susfs_dirent.h": {
+      "layer": "F",
+      "phase": 9,
+      "budget": 0
+    },
+    "kernel/susfs_control.h": {
+      "layer": "L",
+      "phase": 16,
+      "budget": 0
+    },
+    "kernel/susfs_hide_syms.h": {
+      "layer": "F",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/sus_mount.h": {
+      "layer": "F",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/sus_map.h": {
+      "layer": "F",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_uname.h": {
+      "layer": "F",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_kstat.h": {
+      "layer": "F",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/spoof_cmdline.h": {
+      "layer": "F",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_open_redirect.h": {
+      "layer": "legacy",
+      "phase": 5,
+      "budget": 0
+    },
+    "kernel/susfs_avc_spoof.h": {
+      "layer": "F",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_supercall.h": {
+      "layer": "F",
+      "phase": 10,
+      "budget": 0
+    },
+    "kernel/susfs_create_gate.h": {
+      "layer": "F",
+      "phase": 7,
+      "budget": 0
+    },
+    "kernel/susfs_avc_view.h": {
+      "layer": "L",
+      "phase": 6,
+      "budget": 0,
+      "allowed_includes": [],
+      "allowed_symbols": []
+    },
+    "kernel/susfs_uname_view.h": {
+      "layer": "L",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/susfs_uname_policy.h": {
+      "layer": "L",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/susfs_uname_policy.c": {
+      "layer": "L",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/susfs_uname_data.h": {
+      "layer": "D",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/susfs_uname_data.c": {
+      "layer": "D",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/susfs_uname_phys.h": {
+      "layer": "P",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/susfs_uname_phys.c": {
+      "layer": "P",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/susfs_uname_values.h": {
+      "layer": "D",
+      "phase": 8,
+      "budget": 0
+    },
+    "kernel/susfs_hide_data.c": {
+      "layer": "D",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_hide_data.h": {
+      "layer": "D",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_hide_names.h": {
+      "layer": "D",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_hide_policy.c": {
+      "layer": "L",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_hide_policy.h": {
+      "layer": "L",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_hide_view.h": {
+      "layer": "L",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_hide_phys.c": {
+      "layer": "P",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_hide_phys.h": {
+      "layer": "P",
+      "phase": 15,
+      "budget": 0
+    },
+    "kernel/susfs_enable_log.h": {
+      "layer": "F",
+      "phase": 16,
+      "budget": 0
+    },
+    "kernel/ksu_allow_gate_data.c": {
+      "layer": "D",
+      "phase": 17,
+      "budget": 0
+    },
+    "kernel/ksu_allow_gate_data.h": {
+      "layer": "D",
+      "phase": 17,
+      "budget": 0
+    },
+    "kernel/ksu_umount_gate_data.c": {
+      "layer": "D",
+      "phase": 17,
+      "budget": 0
+    },
+    "kernel/ksu_umount_gate_data.h": {
+      "layer": "D",
+      "phase": 17,
+      "budget": 0
+    },
+    "kernel/sus_mount_identity_logic.c": {
+      "layer": "L",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_identity_logic.h": {
+      "layer": "L",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_identity_view.h": {
+      "layer": "L",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_identity_data.c": {
+      "layer": "D",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_identity_data.h": {
+      "layer": "D",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/sus_mount_identity_values.h": {
+      "layer": "D",
+      "phase": 18,
+      "budget": 0
+    },
+    "kernel/susfs_selinux_hide.c": {
+      "layer": "F",
+      "phase": 14,
+      "budget": 0
+    },
+    "kernel/susfs_selinux_hide.h": {
+      "layer": "F",
+      "phase": 14,
+      "budget": 0
+    },
+    "kernel/susfs_selinux_ctx.c": {
+      "layer": "P",
+      "phase": 14,
+      "budget": 0
+    },
+    "kernel/susfs_selinux_ctx.h": {
+      "layer": "F",
+      "phase": 14,
+      "budget": 0
+    }
+  },
+  "header_contract": {
+    "forbidden_includes": [
+      "susfs.h"
+    ],
+    "standalone": [
+      "susfs_helpers.h",
+      "susfs_core.h",
+      "sus_path.h",
+      "susfs_dirent.h",
+      "susfs_control.h",
+      "susfs_hide_syms.h",
+      "sus_mount.h",
+      "sus_map.h",
+      "susfs_uname.h",
+      "susfs_kstat.h",
+      "spoof_cmdline.h",
+      "susfs_open_redirect.h",
+      "susfs_avc_spoof.h",
+      "susfs_supercall.h",
+      "susfs_create_gate.h",
+      "susfs_log.h",
+      "susfs_opath.h",
+      "susfs_or_entry.h",
+      "susfs_avc_data.h",
+      "susfs_avc_policy.h",
+      "susfs_avc_view.h",
+      "susfs_uname_view.h",
+      "susfs_uname_policy.h",
+      "susfs_uname_data.h",
+      "susfs_uname_phys.h",
+      "susfs_uname_values.h",
+      "spoof_cmdline_data.h",
+      "spoof_cmdline_policy.h",
+      "spoof_cmdline_phys.h",
+      "susfs_dirent_data.h",
+      "susfs_dirent_policy.h",
+      "susfs_dirent_phys.h",
+      "susfs_supercall_data.h",
+      "susfs_supercall_policy.h",
+      "susfs_supercall_phys.h",
+      "susfs_or_entry_data.h",
+      "susfs_or_entry_phys.h",
+      "susfs_opath_data.h",
+      "susfs_opath_phys.h",
+      "susfs_main_data.h",
+      "susfs_hide_data.h",
+      "susfs_hide_names.h",
+      "susfs_hide_policy.h",
+      "susfs_hide_view.h",
+      "susfs_hide_phys.h",
+      "susfs_enable_log_data.h",
+      "susfs_enable_log_policy.h",
+      "susfs_enable_log_phys.h",
+      "susfs_enable_log.h",
+      "ksu_allow_gate_data.h",
+      "ksu_umount_gate_data.h",
+      "sus_mount_identity.h",
+      "sus_mount_policy.h",
+      "sus_mount_identity_logic.h",
+      "sus_mount_identity_view.h",
+      "sus_mount_identity_data.h",
+      "sus_mount_identity_values.h"
+    ]
+  }
+}

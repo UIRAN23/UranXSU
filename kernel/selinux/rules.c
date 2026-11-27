@@ -1,3 +1,4 @@
+#include <linux/mutex.h>
 #include <linux/uaccess.h>
 #include <linux/types.h>
 #include <linux/version.h>
@@ -20,12 +21,27 @@
 #define SELINUX_POLICY_INSTEAD_SELINUX_SS
 
 struct selinux_policy *backup_sepolicy;
+static DEFINE_MUTEX(ksu_backup_mutex);
+
+struct selinux_policy *ksu_detach_backup_sepolicy(void)
+{
+    struct selinux_policy *backup;
+
+    mutex_lock(&ksu_backup_mutex);
+    backup = backup_sepolicy;
+    backup_sepolicy = NULL;
+    mutex_unlock(&ksu_backup_mutex);
+    return backup;
+}
 #else
 struct policydb *backup_policydb;
 struct sidtab *backup_sidtab;
 #endif
 
 #define ALL NULL
+
+#define ksu_policy_decision(op, action, reason)                                                                        \
+    pr_debug("sepolicy_decision op=" op " action=" action " reason=%s\n", reason)
 
 #if ((!defined(KSU_COMPAT_USE_SELINUX_STATE)) || LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0))
 extern int avc_ss_reset(u32 seqno);
@@ -151,6 +167,72 @@ static inline void ksu_unlock_sepolicy_legacy(void)
 
 #endif // KSU_COMPAT_HAS_POLICY_MUTEX
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
+#ifdef SELINUX_POLICY_INSTEAD_SELINUX_SS
+static void backup_original_sepolicy(struct selinux_policy *pol, const struct policy_file *snapshot)
+{
+    struct selinux_policy *backup;
+    int ret;
+
+    backup = ksu_read_sepolicy_snapshot(pol, snapshot);
+    if (IS_ERR(backup)) {
+        pr_err("failed to create backup sepolicy: %ld\n", PTR_ERR(backup));
+        return;
+    }
+
+    backup->sidtab = kzalloc(sizeof(*backup->sidtab), GFP_KERNEL);
+    if (!backup->sidtab) {
+        pr_err("failed to alloc backup sidtab\n");
+        ksu_destroy_sepolicy(backup);
+        return;
+    }
+
+    ret = policydb_load_isids(&backup->policydb, backup->sidtab);
+    if (ret) {
+        pr_err("failed to load isids for backup sepolicy: %d!\n", ret);
+        kfree(backup->sidtab);
+        ksu_destroy_sepolicy(backup);
+        return;
+    }
+
+    smp_store_release(&backup_sepolicy, backup);
+    pr_info("backup sepolicy success! latest_granting=%d\n", backup->latest_granting);
+}
+#endif
+
+static struct selinux_policy *dup_policy_for_kernel_rules(struct selinux_policy *old_pol)
+{
+#ifdef SELINUX_POLICY_INSTEAD_SELINUX_SS
+    struct policy_file snapshot = { 0 };
+    struct selinux_policy *pol;
+    int ret;
+
+    lockdep_assert_held(&selinux_state.policy_mutex);
+    lockdep_assert_held(&ksu_backup_mutex);
+    if (backup_sepolicy) {
+        ksu_policy_decision("kernel_rules", "copy", "existing_backup");
+        return ksu_dup_sepolicy(old_pol);
+    }
+
+    ksu_policy_decision("kernel_rules", "prepare", "first_backup");
+    ret = ksu_write_sepolicy_snapshot(old_pol, &snapshot);
+    if (ret) {
+        pr_err("failed to create backup sepolicy: %d\n", ret);
+        ksu_policy_decision("kernel_rules", "copy", "backup_write_failed");
+        return ksu_dup_sepolicy(old_pol);
+    }
+
+    backup_original_sepolicy(old_pol, &snapshot);
+    pol = ksu_read_sepolicy_snapshot(old_pol, &snapshot);
+    vfree(snapshot.data);
+    return pol;
+#else
+    ksu_policy_decision("kernel_rules", "copy", "no_backup_policy_struct");
+    return ksu_dup_sepolicy(old_pol);
+#endif
+}
+#endif
+
 void apply_kernelsu_rules()
 {
     struct ksu_original_symbols *symbols;
@@ -164,35 +246,20 @@ void apply_kernelsu_rules()
     struct selinux_policy *pol, *old_pol;
     mutex_lock(&selinux_state.policy_mutex);
     old_pol = rcu_dereference_protected(selinux_state.policy, lockdep_is_held(&selinux_state.policy_mutex));
-    backup_sepolicy = ksu_dup_sepolicy(old_pol);
-    if (IS_ERR(backup_sepolicy)) {
-        pr_err("failed to create backup sepolicy: %ld\n", PTR_ERR(backup_sepolicy));
-        backup_sepolicy = NULL;
-    } else {
-        backup_sepolicy->sidtab = kzalloc(sizeof(*backup_sepolicy->sidtab), GFP_KERNEL);
-        if (!backup_sepolicy->sidtab) {
-            pr_err("failed to alloc backup sidtab\n");
-            ksu_destroy_sepolicy(backup_sepolicy);
-            backup_sepolicy = NULL;
-        } else {
-            int ret = policydb_load_isids(&backup_sepolicy->policydb, backup_sepolicy->sidtab);
-            if (ret) {
-                pr_err("failed to load isids for backup sepolicy: %d!\n", ret);
-                kfree(backup_sepolicy->sidtab);
-                ksu_destroy_sepolicy(backup_sepolicy);
-                backup_sepolicy = NULL;
-            } else {
-                pr_info("backup sepolicy success! latest_granting=%d\n", backup_sepolicy->latest_granting);
-            }
-        }
-    }
-    pol = ksu_dup_sepolicy(old_pol);
+#ifdef SELINUX_POLICY_INSTEAD_SELINUX_SS
+    mutex_lock(&ksu_backup_mutex);
+    pol = dup_policy_for_kernel_rules(old_pol);
+    mutex_unlock(&ksu_backup_mutex);
+#else
+    pol = dup_policy_for_kernel_rules(old_pol);
+#endif
     if (IS_ERR(pol)) {
         pr_err("failed to dup selinux_policy: %ld\n", PTR_ERR(pol));
         goto out_unlock;
     }
     db = &pol->policydb;
 #else
+    struct policy_file snapshot = { 0 };
     int len = 0;
 
     struct policydb *policydb_ptr = get_policydb();
@@ -203,42 +270,57 @@ void apply_kernelsu_rules()
     newpolicydb = oldpolicydb + 1;
     db = newpolicydb;
 
-    backup_policydb = kzalloc(sizeof(*backup_policydb), GFP_KERNEL);
-
     ksu_lock_sel_mutex_legacy();
 
 retry:
-    len = ksu_dup_policydb(policydb_ptr, backup_policydb);
-    pr_info("len of ksu_dup_policydb (backup_db) output: %d", len);
-    if (len < 0) {
-        pr_err("failed to dup policydb");
-        kfree(backup_policydb);
-        backup_policydb = NULL;
-        backup_sidtab = NULL;
-    } else {
-        backup_sidtab = kzalloc(sizeof(*backup_sidtab), GFP_KERNEL);
-        if (!backup_sidtab) {
-            pr_err("failed to alloc backup sidtab\n");
-            ksu_destroy_policydb(backup_policydb);
-            kfree(backup_policydb);
-            backup_policydb = NULL;
-            backup_sidtab = NULL;
+    if (!backup_policydb) {
+        ksu_policy_decision("kernel_rules", "prepare", "first_backup_legacy");
+        len = ksu_write_policydb_snapshot(policydb_ptr, &snapshot);
+        if (len < 0) {
+            pr_err("failed to dup policydb\n");
+            goto out_free;
+        }
+        backup_policydb = kzalloc(sizeof(*backup_policydb), GFP_KERNEL);
+        if (!backup_policydb) {
+            pr_err("failed to alloc backup policydb\n");
         } else {
-            int ret = policydb_load_isids(backup_policydb, backup_sidtab);
-            if (ret) {
-                pr_err("failed to load isids for backup sepolicy: %d!\n", ret);
-                kfree(backup_sidtab);
-                ksu_destroy_policydb(backup_policydb);
+            len = ksu_read_policydb_snapshot(&snapshot, backup_policydb);
+            pr_info("len of ksu_dup_policydb (backup_db) output: %d", len);
+            if (len < 0) {
+                pr_err("failed to dup policydb");
                 kfree(backup_policydb);
                 backup_policydb = NULL;
                 backup_sidtab = NULL;
             } else {
-                pr_info("backup sepolicy success!\n");
+                backup_sidtab = kzalloc(sizeof(*backup_sidtab), GFP_KERNEL);
+                if (!backup_sidtab) {
+                    pr_err("failed to alloc backup sidtab\n");
+                    ksu_destroy_policydb(backup_policydb);
+                    kfree(backup_policydb);
+                    backup_policydb = NULL;
+                    backup_sidtab = NULL;
+                } else {
+                    int ret = policydb_load_isids(backup_policydb, backup_sidtab);
+                    if (ret) {
+                        pr_err("failed to load isids for backup sepolicy: %d!\n", ret);
+                        kfree(backup_sidtab);
+                        ksu_destroy_policydb(backup_policydb);
+                        kfree(backup_policydb);
+                        backup_policydb = NULL;
+                        backup_sidtab = NULL;
+                    } else {
+                        pr_info("backup sepolicy success!\n");
+                    }
+                }
             }
         }
+        len = ksu_read_policydb_snapshot(&snapshot, db);
+        vfree(snapshot.data);
+        memset(&snapshot, 0, sizeof(snapshot));
+    } else {
+        ksu_policy_decision("kernel_rules", "copy", "existing_backup_legacy");
+        len = ksu_dup_policydb(policydb_ptr, db);
     }
-
-    len = ksu_dup_policydb(policydb_ptr, db);
     pr_info("len of ksu_dup_policydb output: %d", len);
 
     if (len < 0) {
@@ -711,6 +793,7 @@ int handle_sepolicy(void __user *user_data, u64 data_len)
     mutex_lock(&selinux_state.policy_mutex);
 retry:
     old_pol = rcu_dereference_protected(selinux_state.policy, lockdep_is_held(&selinux_state.policy_mutex));
+    ksu_policy_decision("batch", "copy", "commands");
     pol = ksu_dup_sepolicy(old_pol);
     if (IS_ERR(pol)) {
         ret = PTR_ERR(pol);

@@ -384,12 +384,12 @@ fun ModulePage(bottomPadding: Dp) {
                     ) {
                         Icon(
                             imageVector = Icons.TwoTone.Cloud,
-                            contentDescription = stringResource(id = R.string.module_repo),
+                            contentDescription = customText(CustomTextKey.MODULE_REPO_TITLE),
                         )
                     }
                 },
                 scrollBehavior = scrollBehavior,
-                searchBarPlaceHolderText = stringResource(R.string.search_modules),
+                searchBarPlaceHolderText = customText(CustomTextKey.MODULE_SEARCH_PLACEHOLDER),
             )
         },
         floatingActionButton = {
@@ -554,7 +554,7 @@ private fun ModuleDropdown(
                         ModuleUiAction.Sort(uiState.sortEnabledFirst, it),
                     )
                 },
-                text = { Text(stringResource(R.string.module_sort_action_first)) },
+                text = { Text(customText(CustomTextKey.MODULE_SORT_ACTION)) },
                 shapes = MenuDefaults.itemShape(
                     index = 0,
                     count = 2,
@@ -567,7 +567,7 @@ private fun ModuleDropdown(
                         ModuleUiAction.Sort(it, uiState.sortActionFirst),
                     )
                 },
-                text = { Text(stringResource(R.string.module_sort_enabled_first)) },
+                text = { Text(customText(CustomTextKey.MODULE_SORT_ENABLED)) },
                 shapes = MenuDefaults.itemShape(
                     index = 1,
                     count = 2,
@@ -1596,8 +1596,8 @@ fun ModuleItem(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    val moduleVersion = stringResource(id = R.string.module_version)
-                    val moduleAuthor = stringResource(id = R.string.module_author)
+                    val moduleVersion = customText(CustomTextKey.MODULE_VERSION_LABEL)
+                    val moduleAuthor = customText(CustomTextKey.MODULE_AUTHOR_LABEL)
 
                     Column(
                         modifier = Modifier.fillMaxWidth(0.8f),
@@ -1635,7 +1635,7 @@ fun ModuleItem(
 
                         // 显示更多模块信息时添加updateJson
                         if (showMoreModuleInfo && module.updateJson.isNotEmpty()) {
-                            val updateJsonLabel = stringResource(R.string.module_update_json)
+                            val updateJsonLabel = customText(CustomTextKey.MODULE_UPDATE_JSON)
                             Text(
                                 text = "$updateJsonLabel: ${module.updateJson}",
                                 fontSize = MaterialTheme.typography.bodySmall.fontSize,
@@ -1844,7 +1844,7 @@ fun ModuleItem(
                                     .size(20.dp)
                                     .padding(12.dp, 7.dp, 12.dp, 7.dp),
                                 imageVector = Icons.TwoTone.Image,
-                                contentDescription = stringResource(R.string.module_banner_title),
+                                contentDescription = customText(CustomTextKey.MODULE_BANNER_TITLE),
                             )
                         }
                     }

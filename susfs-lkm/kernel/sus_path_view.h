@@ -51,7 +51,6 @@ struct sus_path_view {
 	uid_t caller_uid;
 	bool caller_is_app;
 	bool caller_is_su;
-	bool caller_path_allowed;
 	bool hide_from_apps;
 	bool control_visible;
 };
@@ -68,9 +67,6 @@ sus_path_decide_core(const struct sus_path_view *v)
 		return SUS_PATH_HIDE;
 
 	if (!v->user_rule)
-		return SUS_PATH_PASS;
-
-	if (v->caller_path_allowed)
 		return SUS_PATH_PASS;
 
 	if (!v->hide_from_apps)

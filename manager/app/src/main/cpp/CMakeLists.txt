@@ -11,6 +11,7 @@ add_library(kernelsu
         jni.c
         ksu.c
         legacy.c
+        ksud_integrity.c
 )
 
 target_include_directories(kernelsu PRIVATE .)

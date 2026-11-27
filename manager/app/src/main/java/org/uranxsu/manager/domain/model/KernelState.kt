@@ -19,6 +19,8 @@ data class KernelStatus(
     val managerUAPIVersion: Int = 1,
     val kernelUAPIVersion: Int? = 1,
     val ksuFullVersion: String? = null,
+    val runtimeLkmHash: String? = null,
+    val needsLkmUpdate: Boolean = false,
     val lkmMode: Boolean? = null,
     val kernelVersion: KernelVersion,
     val isRootAvailable: Boolean = false,

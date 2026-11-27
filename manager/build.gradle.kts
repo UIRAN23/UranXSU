@@ -45,6 +45,14 @@ extra["androidSourceCompatibility"] = JavaVersion.VERSION_21
 extra["androidTargetCompatibility"] = JavaVersion.VERSION_21
 extra["managerVersionCode"] = 30000 + getGitCommitCount() + 700
 extra["managerVersionName"] = getGitDescribe()
+extra["bundledLkmHash"] = gitTreeHash("kernel", "uapi")
+extra["bundledUserspaceHash"] = gitTreeHash(
+    "userspace/ksud",
+    "susfs-lkm",
+    "external/nomount",
+    "external/BuiltZygisk",
+    "external/noshot",
+)
 extra["isPrBuild"] = project.findProperty("IS_PR_BUILD")?.toString()?.toBoolean() ?: false
 extra["defaultManagerPackageName"] = "org.uranxsu.manager"
 extra["managerPackageName"] = project.findProperty("KSU_PACKAGE_NAME")?.toString() ?: extra["defaultManagerPackageName"]
@@ -56,6 +64,23 @@ val isSpoofedBuild = project.findProperty("IS_SPOOFED_BUILD")?.toString()?.toBoo
 fun getGitCommitCount(): Int = providers.exec {
     commandLine("git", "rev-list", "--count", "HEAD")
 }.standardOutput.asText.get().trim().toInt()
+
+fun gitTreeHash(vararg paths: String): String {
+    val oids = paths.map { path ->
+        val execResult = providers.exec {
+            commandLine("git", "rev-parse", "--verify", "--quiet", "HEAD:$path")
+            isIgnoreExitValue = true
+        }
+        if (execResult.result.get().exitValue != 0) {
+            return@map ""
+        }
+        execResult.standardOutput.asText.get().trim()
+    }
+    if (oids.any { it.isEmpty() }) return "unknown"
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(oids.joinToString(":").toByteArray(Charsets.UTF_8))
+    return digest.joinToString("") { "%02x".format(it) }.take(8)
+}
 
 fun getGitDescribe(): String {
     val described = providers.exec {

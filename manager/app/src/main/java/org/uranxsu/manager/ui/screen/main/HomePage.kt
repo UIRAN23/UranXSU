@@ -44,6 +44,7 @@ import androidx.compose.material.icons.twotone.Error
 import androidx.compose.material.icons.twotone.Extension
 import androidx.compose.material.icons.twotone.FilterList
 import androidx.compose.material.icons.twotone.Group
+import androidx.compose.material.icons.twotone.HealthAndSafety
 import androidx.compose.material.icons.twotone.Info
 import androidx.compose.material.icons.twotone.Memory
 import androidx.compose.material.icons.twotone.PowerSettingsNew
@@ -55,6 +56,7 @@ import androidx.compose.material.icons.twotone.TaskAlt
 import androidx.compose.material.icons.twotone.Tune
 import androidx.compose.material.icons.twotone.VolunteerActivism
 import androidx.compose.material.icons.twotone.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenuGroup
@@ -70,6 +72,7 @@ import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.rememberTopAppBarState
@@ -88,6 +91,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -107,10 +111,12 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.uranxsu.manager.BuildConfig
 import org.uranxsu.manager.Natives.KernelPatchImplementation
 import org.uranxsu.manager.R
+import org.uranxsu.manager.data.ksud.KsudSyncStatus
 import org.uranxsu.manager.domain.model.HomeSystemInfo
 import org.uranxsu.manager.domain.model.KernelStatus
 import org.uranxsu.manager.domain.model.ManagerUpdateChannel
 import org.uranxsu.manager.domain.model.ManagerUpdateInfo
+import org.uranxsu.manager.domain.model.UpdateImpact
 import org.uranxsu.manager.domain.usecase.EnqueueManagerUpdateUseCase
 import org.uranxsu.manager.magica.MagicaService
 import org.uranxsu.manager.ui.component.KsuIsValid
@@ -150,6 +156,7 @@ fun HomePage(
     bottomPadding: Dp,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val viewModel = koinViewModel<HomeViewModel>()
     val homeCustomization = koinInject<HomeCustomizationConfig>()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -163,6 +170,10 @@ fun HomePage(
             when (event) {
                 is HomeUiEvent.Error -> if (event.message.isNotBlank()) {
                     Toast.makeText(context, event.message, Toast.LENGTH_SHORT).show()
+                }
+
+                is HomeUiEvent.Info -> {
+                    Toast.makeText(context, resources.getString(event.stringRes), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -368,6 +379,54 @@ fun HomePage(
                 )
             }
             Spacer(modifier = Modifier.height(10.dp))
+            if (uiState.systemStatus.needsLkmUpdate) {
+                WarningCard(
+                    message = stringResource(
+                        R.string.home_lkm_update_warning,
+                        uiState.systemStatus.runtimeLkmHash.orEmpty(),
+                        BuildConfig.BUNDLED_LKM_HASH,
+                    ),
+                    icon = {
+                        Icon(
+                            imageVector = Icons.TwoTone.Warning,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    onClick = {
+                        if (!uiState.systemStatus.isLateLoadMode) {
+                            navigator.push(Route.Install(preselectedKernelUri = null))
+                        }
+                    },
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
+            val ksudState = uiState.systemInfo.ksudIntegrity
+            if (uiState.systemStatus.isManager &&
+                (
+                    ksudState?.status == KsudSyncStatus.NEEDS_SYNC ||
+                        ksudState?.status == KsudSyncStatus.MISSING
+                    )
+            ) {
+                WarningCard(
+                    message = if (ksudState.status == KsudSyncStatus.MISSING) {
+                        stringResource(R.string.home_ksud_missing_warning)
+                    } else {
+                        customText(CustomTextKey.HOME_STATUS_KSUD_SYNC)
+                    },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.TwoTone.Warning,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
+                    onClick = {
+                        viewModel.dispatch(HomeUiAction.SyncKsud)
+                    },
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+            }
             ManagerUpdateCard(uiState.stableManagerUpdate)
             ManagerUpdateCard(uiState.betaManagerUpdate)
             if (uiState.isBetaManagerUpdateCheckFailed) {
@@ -390,6 +449,7 @@ fun HomePage(
                     systemInfo = uiState.systemInfo,
                     isSimpleMode = uiState.isSimpleMode,
                     showHomeCardIcons = uiState.showHomeCardIcons,
+                    onSyncKsud = { viewModel.dispatch(HomeUiAction.SyncKsud) },
                 )
             }
 
@@ -446,13 +506,18 @@ private fun ManagerUpdateCardContent(updateInfo: ManagerUpdateInfo) {
     } else {
         stringResource(R.string.beta_version_available, updateInfo.versionCode)
     }
-    val updateText = stringResource(R.string.module_update)
+    val impactLabel = when (updateInfo.updateImpact) {
+        UpdateImpact.APK_ONLY -> stringResource(R.string.update_impact_apk_only)
+        UpdateImpact.KSUD_SYNC -> stringResource(R.string.update_impact_ksud_sync)
+        UpdateImpact.LKM_UPDATE -> stringResource(R.string.update_impact_lkm_update)
+    }
+    val updateText = customText(CustomTextKey.HOME_UPDATE_BUTTON)
     val details = stringResource(
         R.string.manager_update_details,
         updateInfo.versionName,
         updateInfo.versionCode,
         updateInfo.abi,
-    )
+    ) + "\n$impactLabel"
     val dialogContent = if (updateInfo.changelog.isBlank()) {
         details
     } else {
@@ -470,7 +535,7 @@ private fun ManagerUpdateCardContent(updateInfo: ManagerUpdateInfo) {
     )
 
     WarningCard(
-        message = message,
+        message = "$message • $impactLabel",
         color = MaterialTheme.colorScheme.outlineVariant,
         icon = {
             Icon(
@@ -501,8 +566,12 @@ fun RebootDropdownItems(
     items.onEachIndexed { index, (id, reason) ->
         val label = when (id) {
             R.string.reboot -> customText(CustomTextKey.COMMON_REBOOT)
+            R.string.reboot_soft -> customText(CustomTextKey.COMMON_REBOOT_SOFT)
+            R.string.reboot_userspace -> customText(CustomTextKey.COMMON_REBOOT_USERSPACE)
             R.string.reboot_recovery -> customText(CustomTextKey.COMMON_REBOOT_RECOVERY)
             R.string.reboot_bootloader -> customText(CustomTextKey.COMMON_REBOOT_BOOTLOADER)
+            R.string.reboot_download -> customText(CustomTextKey.COMMON_REBOOT_DOWNLOAD)
+            R.string.reboot_edl -> customText(CustomTextKey.COMMON_REBOOT_EDL)
             else -> stringResource(id)
         }
         DropdownMenuItem(
@@ -557,6 +626,15 @@ private fun TopBar(
                             contentDescription = stringResource(R.string.susfs_config_setting_title),
                         )
                     }
+                }
+
+                IconButton(onClick = {
+                    navigator.push(Route.SystemHealth)
+                }) {
+                    Icon(
+                        imageVector = Icons.TwoTone.HealthAndSafety,
+                        contentDescription = customText(CustomTextKey.TOOL_SYSTEM_HEALTH),
+                    )
                 }
 
                 // 重启按钮
@@ -896,8 +974,49 @@ private fun InfoCard(
     systemInfo: HomeSystemInfo,
     isSimpleMode: Boolean,
     showHomeCardIcons: Boolean,
+    onSyncKsud: () -> Unit = {},
 ) {
     val managersList = systemInfo.managersList
+    var showKsudDialog by remember { mutableStateOf(false) }
+
+    val ksudSnapshot = systemInfo.ksudIntegrity
+    if (showKsudDialog && ksudSnapshot != null) {
+        val statusText = when (ksudSnapshot.status) {
+            KsudSyncStatus.UP_TO_DATE -> stringResource(R.string.ksud_status_up_to_date)
+            KsudSyncStatus.NEEDS_SYNC -> stringResource(R.string.ksud_status_needs_sync)
+            KsudSyncStatus.MISSING -> stringResource(R.string.ksud_status_missing)
+            KsudSyncStatus.UNAVAILABLE -> stringResource(R.string.ksud_status_unavailable)
+        }
+        AlertDialog(
+            onDismissRequest = { showKsudDialog = false },
+            title = { Text(stringResource(R.string.home_ksud_daemon)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.home_ksud_dialog_body,
+                        statusText,
+                        ksudSnapshot.bundledVersion,
+                        ksudSnapshot.installedVersion ?: stringResource(R.string.ksud_not_installed),
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showKsudDialog = false
+                        onSyncKsud()
+                    },
+                ) {
+                    Text(stringResource(R.string.ksud_sync_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showKsudDialog = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
 
     SegmentedColumn(
         title = stringResource(R.string.home_version_info),
@@ -1030,7 +1149,7 @@ private fun InfoCard(
             SettingsBaseWidget(
                 icon = Icons.TwoTone.Group.takeIf { showHomeCardIcons },
                 iconPlaceholder = false,
-                title = stringResource(R.string.multi_manager_list),
+                title = customText(CustomTextKey.HOME_INFO_MULTI_MANAGER),
                 description = managersText.ifEmpty { stringResource(R.string.no_active_manager) },
             )
         }
@@ -1065,6 +1184,31 @@ private fun InfoCard(
                 iconPlaceholder = false,
                 title = customText(CustomTextKey.HOME_INFO_METAMODULE),
                 description = systemInfo.metaModuleImplement,
+            )
+        }
+
+        item(
+            visible = systemStatus.isManager && ksudSnapshot != null && ksudSnapshot.status != KsudSyncStatus.UNAVAILABLE,
+        ) {
+            val ksudDesc = when (ksudSnapshot?.status) {
+                KsudSyncStatus.UP_TO_DATE -> ksudSnapshot.installedVersion?.let {
+                    "$it (${stringResource(R.string.ksud_status_up_to_date)})"
+                } ?: stringResource(R.string.ksud_status_up_to_date)
+
+                KsudSyncStatus.NEEDS_SYNC -> ksudSnapshot.installedVersion?.let {
+                    "$it (${stringResource(R.string.ksud_status_needs_sync)})"
+                } ?: stringResource(R.string.ksud_status_needs_sync)
+
+                KsudSyncStatus.MISSING -> stringResource(R.string.ksud_status_missing)
+
+                else -> stringResource(R.string.ksud_status_unavailable)
+            }
+            SettingsBaseWidget(
+                icon = Icons.TwoTone.Memory.takeIf { showHomeCardIcons },
+                iconPlaceholder = false,
+                title = customText(CustomTextKey.HOME_INFO_KSUD),
+                description = ksudDesc,
+                onClick = { showKsudDialog = true },
             )
         }
     }

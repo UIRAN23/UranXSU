@@ -10,7 +10,7 @@
 #include <linux/string.h>
 #include <linux/module.h>
 
-#include "susfs.h"
+#include "sus_path.h"
 #include "susfs_create_op.h"
 #include "susfs_create_policy.h"
 #include "susfs_create_view.h"
@@ -33,7 +33,6 @@ static void create_view_fill_caller(struct susfs_create_view *v)
 	v->caller_uid = current_uid().val;
 	v->caller_is_app = susfs_is_current_proc_umounted_app();
 	v->caller_is_su = susfs_control_visible();
-	v->caller_path_allowed = susfs_is_sus_path_uid_allowed(v->caller_uid);
 	v->control_visible = susfs_control_visible();
 	v->hide_from_apps = sus_path_hide_from_apps();
 }

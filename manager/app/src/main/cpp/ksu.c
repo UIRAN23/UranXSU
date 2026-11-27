@@ -328,3 +328,10 @@ bool get_managers_list(struct ksu_get_managers_cmd **out_cmd) {
     *out_cmd = cmd;
     return true;
 }
+
+bool ksu_grant_root(void) {
+    if (ksuctl(KSU_IOCTL_GRANT_ROOT, nullptr) == 0) {
+        return true;
+    }
+    return legacy_grant_root();
+}

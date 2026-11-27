@@ -21,6 +21,8 @@ val managerVersionCode = rootProject.extra["managerVersionCode"] as Int
 val managerVersionName = rootProject.extra["managerVersionName"] as String
 val managerPackageName = rootProject.extra["managerPackageName"] as String
 val managerName = rootProject.extra["managerName"] as String
+val bundledLkmHash = rootProject.extra["bundledLkmHash"] as String
+val bundledUserspaceHash = rootProject.extra["bundledUserspaceHash"] as String
 
 apksign {
     storeFileProperty = "KEYSTORE_FILE"
@@ -137,6 +139,8 @@ android {
 
         val isPrBuild = rootProject.extra["isPrBuild"] as Boolean
         buildConfigField("boolean", "IS_PR_BUILD", isPrBuild.toString())
+        buildConfigField("String", "BUNDLED_LKM_HASH", "\"$bundledLkmHash\"")
+        buildConfigField("String", "BUNDLED_USERSPACE_HASH", "\"$bundledUserspaceHash\"")
         resValue("string", "app_name", managerName)
 
         externalNativeBuild {

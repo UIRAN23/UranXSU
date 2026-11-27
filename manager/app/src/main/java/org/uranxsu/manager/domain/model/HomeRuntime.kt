@@ -1,6 +1,7 @@
 package org.uranxsu.manager.domain.model
 
 import org.uranxsu.manager.KernelVersion
+import org.uranxsu.manager.data.ksud.KsudIntegritySnapshot
 
 data class HomeBasicInfo(
     val kernelRelease: String = "",
@@ -34,6 +35,7 @@ data class HomeSystemInfo(
     val zygiskImplement: String = "",
     val metaModuleImplement: String = "",
     val seccompStatus: Int = -1,
+    val ksudIntegrity: KsudIntegritySnapshot? = null,
 )
 
 data class HomeDashboardState(

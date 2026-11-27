@@ -791,7 +791,7 @@
     <string name="media_type_photo">当前：图片</string>
     <string name="home_card_media_photo_active">当前：图片（点击更换）</string>
     <string name="gestures_animations_section">手势与动画</string>
-    <string name="theme_import_dialog_title">导入主题 (.sukisu)</string>
+    <string name="theme_import_dialog_title">导入主题 (.uxtheme)</string>
     <string name="theme_import_select_all">全选</string>
     <string name="theme_import_select_none">全不选</string>
     <string name="theme_import_part_colors">颜色与调色板</string>

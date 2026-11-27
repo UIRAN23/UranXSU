@@ -5,6 +5,12 @@ enum class ManagerUpdateChannel {
     BETA,
 }
 
+enum class UpdateImpact {
+    APK_ONLY,
+    KSUD_SYNC,
+    LKM_UPDATE,
+}
+
 sealed interface ManagerApkSource {
     val url: String
 
@@ -25,4 +31,7 @@ data class ManagerUpdateInfo(
     val fileName: String,
     val source: ManagerApkSource,
     val changelog: String = "",
+    val updateImpact: UpdateImpact = UpdateImpact.APK_ONLY,
+    val remoteLkmHash: String? = null,
+    val remoteUserspaceHash: String? = null,
 )

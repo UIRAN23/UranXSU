@@ -11,24 +11,26 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v7
 
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
         with:
-          version: 0.14.1
+          ndk-version: r26b
 
       - name: Build susfs_insmod (aarch64)
         run: |
           set -eu
-          if ! command -v ld.lld >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y lld
-          fi
           mkdir -p out/aarch64 out/arm out/x86_64
-          clang --target=aarch64-linux-gnu -O2 -nostdlib -static-pie \
-            -fno-stack-protector -fno-builtin -fuse-ld=lld -Wl,-e,_start \
+          "${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang" \
+            -O2 -mno-outline-atomics \
             -o out/aarch64/susfs_insmod susfs-lkm/tools/susfs_insmod.c
           chmod 0755 out/aarch64/susfs_insmod
           ls -la out/aarch64/susfs_insmod
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
 
       - name: Build NoMount nm CLI (aarch64, arm, x86_64)
         run: |
@@ -53,6 +55,25 @@ jobs:
           fi
           ls -la aarch64/nm arm/nm x86_64/nm
           file aarch64/nm arm/nm x86_64/nm
+
+      - name: Setup Zig 0.17.1 for NoShot
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.1
+
+      - name: Build NoShot (arm64-v8a, armeabi-v7a, x86_64, x86)
+        run: |
+          set -eu
+          cd external/noshot
+          zig build test
+          zig build
+          cp zig-out/zygisk/arm64-v8a.so ../../out/aarch64/noshot_64.so
+          cp zig-out/zygisk/armeabi-v7a.so ../../out/aarch64/noshot_32.so
+          cp zig-out/zygisk/armeabi-v7a.so ../../out/arm/noshot_32.so
+          cp zig-out/zygisk/x86_64.so ../../out/x86_64/noshot_64.so
+          cp zig-out/zygisk/x86.so ../../out/x86_64/noshot_32.so
+          chmod 0644 ../../out/aarch64/noshot_*.so ../../out/arm/noshot_*.so ../../out/x86_64/noshot_*.so
+          ls -la ../../out/aarch64/noshot_*.so ../../out/arm/noshot_*.so ../../out/x86_64/noshot_*.so
 
       - name: Upload aarch64 auxiliary tools
         uses: actions/upload-artifact@v7

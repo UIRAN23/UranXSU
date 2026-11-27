@@ -23,12 +23,14 @@ import org.uranxsu.manager.BuildConfig
 import org.uranxsu.manager.data.AppSettingsRepository
 import org.uranxsu.manager.data.application.ApplicationControlRepository
 import org.uranxsu.manager.data.application.DynamicManagerRepository
+import org.uranxsu.manager.data.backup.ConfigBackupManager
 import org.uranxsu.manager.data.count.CountRepository
 import org.uranxsu.manager.data.download.DownloadRepository
 import org.uranxsu.manager.data.file.ModuleFileRepository
 import org.uranxsu.manager.data.flash.FlashRepository
 import org.uranxsu.manager.data.kernel.KernelRepository
 import org.uranxsu.manager.data.kernel.UmountRepository
+import org.uranxsu.manager.data.ksud.KsudIntegrityRepository
 import org.uranxsu.manager.data.logging.BugreportRepository
 import org.uranxsu.manager.data.logging.SulogRepository
 import org.uranxsu.manager.data.module.ModuleActionRepository
@@ -43,6 +45,7 @@ import org.uranxsu.manager.data.mount.MountRepository
 import org.uranxsu.manager.data.network.NetworkRequestRepository
 import org.uranxsu.manager.data.network.NetworkStatusRepository
 import org.uranxsu.manager.data.network.WebResourceRepository
+import org.uranxsu.manager.data.noshot.NoShotRepository
 import org.uranxsu.manager.data.packageinfo.AppIconDataSource
 import org.uranxsu.manager.data.packageinfo.InstalledPackageCache
 import org.uranxsu.manager.data.packageinfo.InstalledPackageRepository
@@ -66,6 +69,7 @@ import org.uranxsu.manager.data.text.HanziToPinyin
 import org.uranxsu.manager.data.theme.MonetCompatColorSource
 import org.uranxsu.manager.data.theme.ThemeRepository
 import org.uranxsu.manager.data.update.ManagerUpdateRepository
+import org.uranxsu.manager.data.update.RootApkInstaller
 import org.uranxsu.manager.data.webui.WebUiRepository
 import org.uranxsu.manager.data.zygisk.ZygiskRepository
 import org.uranxsu.manager.domain.text.TextTransliterator
@@ -204,12 +208,14 @@ import org.uranxsu.manager.ui.viewmodel.ModuleRepoViewModel
 import org.uranxsu.manager.ui.viewmodel.ModuleViewModel
 import org.uranxsu.manager.ui.viewmodel.MountSettingsViewModel
 import org.uranxsu.manager.ui.viewmodel.NoMountViewModel
+import org.uranxsu.manager.ui.viewmodel.NoShotViewModel
 import org.uranxsu.manager.ui.viewmodel.RepositorySourcesViewModel
 import org.uranxsu.manager.ui.viewmodel.ScriptRunViewModel
 import org.uranxsu.manager.ui.viewmodel.SettingsViewModel
 import org.uranxsu.manager.ui.viewmodel.SuSFSViewModel
 import org.uranxsu.manager.ui.viewmodel.SulogViewModel
 import org.uranxsu.manager.ui.viewmodel.SuperUserViewModel
+import org.uranxsu.manager.ui.viewmodel.SystemHealthViewModel
 import org.uranxsu.manager.ui.viewmodel.TemplateEditorViewModel
 import org.uranxsu.manager.ui.viewmodel.TemplateViewModel
 import org.uranxsu.manager.ui.viewmodel.UmountManagerScreenViewModel
@@ -282,10 +288,13 @@ val repositoryModule = module {
         )
     }
     singleOf(::ManagerUpdateRepository)
+    singleOf(::RootApkInstaller)
+    singleOf(::ConfigBackupManager)
     singleOf(::ApplicationControlRepository)
     singleOf(::DownloadRepository)
     single { FlashRepository(get(), get(applicationScopeQualifier), get(), get()) }
     singleOf(::KernelRepository)
+    singleOf(::KsudIntegrityRepository)
     singleOf(::HomeRuntimeRepository)
     singleOf(::HomeStateRepository)
     singleOf(::NetworkStatusRepository)
@@ -312,6 +321,7 @@ val repositoryModule = module {
     singleOf(::SuSFSRepository)
     singleOf(::MountRepository)
     singleOf(::ZygiskRepository)
+    singleOf(::NoShotRepository)
     singleOf(::MonetCompatColorSource)
     singleOf(::ThemeRepository)
     single {
@@ -476,6 +486,8 @@ val viewModelModule = module {
     viewModelOf(::MountSettingsViewModel)
     viewModelOf(::NoMountViewModel)
     viewModelOf(::BuiltinZygiskViewModel)
+    viewModelOf(::NoShotViewModel)
+    viewModelOf(::SystemHealthViewModel)
     viewModel { parameters -> ModuleRepoViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), parameters.getOrNull<String>()) }
     viewModel { parameters -> ModuleDetailViewModel(parameters[0], parameters[1], get(), get(), get(), get(), get(), get(), get()) }
     viewModelOf(::RepositorySourcesViewModel)

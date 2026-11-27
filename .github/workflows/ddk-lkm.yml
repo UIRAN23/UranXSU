@@ -96,19 +96,19 @@ jobs:
       if: ${{ inputs.arch == 'arm64' }}
       run: |
         set -eu
-        SUSFS_VER="$(tr -d ' \r\n' < susfs-lkm/VERSION)-uranxsu"
-        echo "=== Building susfs_guard_lkm.ko ($SUSFS_VER) for KMI: ${{ inputs.kmi }} ==="
+        echo "=== Building susfs_guard_lkm.ko for KMI: ${{ inputs.kmi }} ==="
         test -f "$KDIR/Makefile"
         make -C "$KDIR" M="$PWD/susfs-lkm/kernel" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
-          SUSFS_BUILD_VERSION="$SUSFS_VER" modules -j"$(nproc)"
+          modules -j"$(nproc)"
         OUT_DIR=/github/workspace/out/aarch64
         mkdir -p "$OUT_DIR"
         OUTPUT_NAME="${{ inputs.kmi }}_susfs.ko"
         cp susfs-lkm/kernel/susfs_guard_lkm.ko "$OUT_DIR/$OUTPUT_NAME"
-        ALLOW="init_module,susfs_layers_down,susfs_tw_func,susfs_watch_freeing,hk_own_run,hk_write_run"
+        ALLOW="init_module,susfs_layers_down,susfs_tw_func,susfs_watch_freeing,hk_own_run,hk_write_run,hk_exec_clear_stopped,hk_nx_clear_page,hk_nx_neighbours"
         if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
         "$PY" susfs-lkm/tools/cfi_sites.py --allow "$ALLOW" "$OUT_DIR/$OUTPUT_NAME"
-        "$PY" susfs-lkm/build.py --verify-ko "$OUT_DIR/$OUTPUT_NAME" --kmi "${{ inputs.kmi }}" --expected-version "$SUSFS_VER"
+        test -s "$OUT_DIR/$OUTPUT_NAME"
+        readelf -S "$OUT_DIR/$OUTPUT_NAME" | grep -q '\.symtab'
         # Do NOT strip susfs_guard_lkm.ko: susfs_insmod requires .symtab for kallsyms relocation
         ls -la "$OUT_DIR/$OUTPUT_NAME"
         echo "Size: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"

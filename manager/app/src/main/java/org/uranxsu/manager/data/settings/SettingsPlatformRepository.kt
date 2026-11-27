@@ -86,6 +86,7 @@ class SettingsPlatformRepository(
             checkManagerUpdate = settings.getBoolean("check_update", true),
             checkBetaUpdate = settings.getBoolean("check_beta_update", true),
             checkModuleUpdate = loadModuleUpdatePreference(),
+            autoUpdateKsud = settings.getBoolean("auto_update_ksud", true),
             autoJailbreakEnabled = settings.getBoolean("auto_jailbreak", false),
             useBuiltinMonoFont = themeConfig.useBuiltinMonoFont,
             useSoftReboot = settings.getBoolean("use_soft_reboot", false),
@@ -202,6 +203,9 @@ class SettingsPlatformRepository(
 
             is PlatformSetting.ModuleUpdateCheck ->
                 settings.putBoolean("check_module_update", setting.enabled)
+
+            is PlatformSetting.AutoUpdateKsud ->
+                settings.putBoolean("auto_update_ksud", setting.enabled)
 
             is PlatformSetting.Locale -> settings.putString("app_locale", setting.tag)
 

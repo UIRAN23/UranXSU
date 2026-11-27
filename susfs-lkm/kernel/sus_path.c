@@ -37,7 +37,6 @@
 #include <linux/list.h>
 #include <linux/spinlock.h>
 #include <linux/namei.h>
-#include <linux/dcache.h>
 #include <linux/fs.h>
 #include <linux/err.h>
 #include <linux/errno.h>
@@ -51,22 +50,23 @@
 #include <linux/proc_fs.h>	/* proc_create() for /proc/susfs_path */
 #include <linux/seq_file.h>	/* single_open()/seq_write() for the same node */
 #include <linux/version.h>	/* LINUX_VERSION_CODE: the setxattr hook's first argument */
-#include <linux/kprobes.h>
 #include "susfs_abi.h"
 #include "susfs_log.h"
 #include "sus_path_match.h"
 #include "sus_path_data.h"
 #include "sus_path_view.h"
 #include "susfs_create_view.h"
-#include "susfs.h"	/* susfs_abi_path_ok */
+#include "sus_path.h"
+#include "susfs_control.h"
+#include "susfs_dirent.h"
+#include "susfs_helpers.h"
 #include "symbol_resolver.h"	/* find_kernel_symbol_exact, for optional compat probes */
 #include "ksu_umount_gate.h"	/* susfs_is_current_proc_umounted_app (issue #34) */
 #include "ksu_allow_gate.h"	/* the control-node gate is su's own */
 
 #include "lsm_hook.h"
+#include "susfs_hooks.h"
 #include "fsnotify_lifetime.h"
-#include "btf_layout.h"
-#include "susfs_kprobe.h"
 
 /* Bounce buffer for the dirent rewrite: one record at a time, so only a single
  * record - not a whole listing - has to fit; one that does not fit is left
@@ -96,7 +96,7 @@
  * 195/196/197 shmctl/shmat/shmdt, while AArch32 gives 141/217 to the two getdents and
  * 195/196/197 to stat64/lstat64/fstat64.  Every match is therefore gated on the caller's ABI -
  * which table entry the call came through now, and the same way in susfs_kstat.c for the stat
- * family.  The two listing numbers themselves live in susfs.h: the table entries that drive this
+ * family.  The two listing numbers themselves live in susfs_dirent.h: the table entries that drive this
  * filter (susfs_kstat.c) have to name them too. */
 
 struct linux_dirent64 {
@@ -138,55 +138,12 @@ struct sus_path_entry {
     bool self_protect;
     /* Pre-relax mode, 0 = this rule did not touch it (sus_path_relax_mode()). */
     umode_t orig_mode;
-    /* Parent directory context for entries whose inode->i_ino == 0 (e.g. FUSE):
-     * a directory listing on that exact directory can still filter by (dir, name)
-     * even when d_ino is 0. parent_inode is ihold'ed only when parent->i_ino == 0. */
-    struct super_block *parent_sb;
-    struct inode *parent_inode;
-    u64 parent_ino;
 };
-
-static void sus_path_capture_parent(struct dentry *dentry,
-                                    struct super_block **sb_out,
-                                    struct inode **inode_out,
-                                    u64 *ino_out)
-{
-    struct dentry *parent;
-    struct inode *pinode;
-
-    *sb_out = NULL;
-    *inode_out = NULL;
-    *ino_out = 0;
-
-    if (!dentry || IS_ROOT(dentry))
-        return;
-    parent = dget_parent(dentry);
-    if (!parent)
-        return;
-    pinode = (parent != dentry) ? d_inode(parent) : NULL;
-    if (pinode) {
-        *sb_out = pinode->i_sb;
-        *ino_out = (u64)pinode->i_ino;
-        if (!pinode->i_ino) {
-            ihold(pinode);
-            *inode_out = pinode;
-        }
-    }
-    dput(parent);
-}
-
-static void sus_path_set_parent(struct sus_path_entry *e, struct dentry *dentry)
-{
-    if (e && e->inode && !e->ino)
-        sus_path_capture_parent(dentry, &e->parent_sb,
-                                &e->parent_inode, &e->parent_ino);
-}
 
 /* Defined next to the readlink stub further down, but called from the pending resolver
  * (which runs inside sus_path_lock) and from both add paths, so declare them first. */
 static int sus_path_iop_arm(struct sus_path_entry *e);
 static void sus_path_iop_restore(struct sus_path_entry *e);
-static bool sus_path_permission_registered;
 /* Counted when the i_op copy could not be allocated: the readlink face then stays as it
  * was (a registered plain file answers EINVAL where stat answers ENOENT) instead of
  * failing the registration - the rule still hides everything the other faces cover. */
@@ -202,8 +159,7 @@ static void sus_path_relax_mode(struct sus_path_entry *e)
 {
     umode_t mode;
 
-    /* Prefer the inode_permission return hook when armed so i_mode stays untouched. */
-    if (!e->inode || READ_ONCE(sus_path_permission_registered))
+    if (!e->inode)
         return;
 
     mode = READ_ONCE(e->inode->i_mode);
@@ -271,8 +227,7 @@ static bool sus_path_release_one(struct super_block *sb, const char *path,
     mutex_lock(&sus_path_lifecycle_lock);
     spin_lock(&sus_path_lock);
     list_for_each_entry(e, &sus_path_list, list) {
-        if ((sb && e->sb != sb && e->parent_sb != sb) ||
-            (path && strcmp(e->path, path)) ||
+        if ((sb && e->sb != sb) || (path && strcmp(e->path, path)) ||
             (ordinary && e->self_protect))
             continue;
         found = e;
@@ -290,14 +245,10 @@ static bool sus_path_release_one(struct super_block *sb, const char *path,
          * the store would be into freed memory.  See sus_path_iop_restore(). */
         sus_path_iop_restore(found);
         iput(found->inode);
-        if (found->parent_inode)
-            iput(found->parent_inode);
         spin_lock(&sus_path_lock);
         list_del(&found->retiring_list);
         spin_unlock(&sus_path_lock);
         wake_up_all(&sus_path_release_wait);
-    } else if (found->parent_inode) {
-        iput(found->parent_inode);
     }
     kfree(found);
     return true;
@@ -310,7 +261,7 @@ static bool sus_path_releases_pending(struct super_block *sb)
 
     spin_lock(&sus_path_lock);
     list_for_each_entry(e, &sus_path_retiring, retiring_list) {
-        if (!sb || e->sb == sb || e->parent_sb == sb) {
+        if (!sb || e->sb == sb) {
             pending = true;
             break;
         }
@@ -341,13 +292,6 @@ static char *dirent_tmp;
 static int no_extra;
 module_param(no_extra, int, 0644);
 
-/* Automatically defer CMD_SUSFS_ADD_SUS_PATH (0x55550) rules that answer -ENOENT at
- * registration time (e.g. /data/media/0 or /storage/emulated/0 paths applied by ksud
- * before FBE User 0 unlock / FUSE mount) into the pending resolution queue instead of
- * failing the supercall with -ENOENT. Set auto_pending=0 for strict upstream rejection. */
-static bool auto_pending = true;
-module_param(auto_pending, bool, 0644);
-
 /* Guards dirent_tmp, one global scratch buffer: the probes can fire concurrently, and without this
  * two listings compact into the same buffer and one process can get another directory's entries.
  * sus_path_lock cannot be reused - sus_path_is_hidden() takes it inside the traversal. */
@@ -370,27 +314,10 @@ static atomic_t n_dirent_all_hidden = ATOMIC_INIT(0);
  * resolve call, so every other process keeps being hidden for the whole window; it is cleared right
  * after kern_path() returns, on every path. */
 static struct task_struct *sus_path_resolver;
-static struct task_struct *sus_path_add_resolver;
-static DEFINE_MUTEX(sus_path_add_walk_lock);
 
 static inline bool sus_path_is_resolver(void)
 {
-    struct task_struct *cur = current;
-
-    return READ_ONCE(sus_path_resolver) == cur ||
-           READ_ONCE(sus_path_add_resolver) == cur;
-}
-
-static int sus_path_walk_exempt(const char *name, unsigned int flags, struct path *path)
-{
-    int rc;
-
-    mutex_lock(&sus_path_add_walk_lock);
-    WRITE_ONCE(sus_path_add_resolver, current);
-    rc = kern_path(name, flags, path);
-    WRITE_ONCE(sus_path_add_resolver, NULL);
-    mutex_unlock(&sus_path_add_walk_lock);
-    return rc;
+    return READ_ONCE(sus_path_resolver) == current;
 }
 
 /* Upstream resolves its _LOOP list from a workqueue worker under
@@ -525,8 +452,6 @@ static inline bool sus_path_gate(struct inode *inode)
 {
     if (!hide_from_apps)
         return true;
-    if (susfs_is_sus_path_uid_allowed(current_uid().val))
-        return false;
     if (!susfs_is_current_proc_umounted_app())
         return false;
     return !inode || current_uid().val != inode->i_uid.val;
@@ -554,10 +479,8 @@ static void sus_path_view_fill(struct sus_path_view *v, enum sus_path_face face,
                                const struct sus_path_rule_facts *f);
 int sus_path_rule_facts_dirent(u64 ino, const char *name,
                                struct sus_path_rule_facts *facts);
-int sus_path_rule_facts_dirent_at(struct inode *dir, u64 ino, const char *name,
-                                  struct sus_path_rule_facts *facts);
 
-static bool sus_path_is_hidden(struct inode *dir, u64 ino, const char *name)
+static bool sus_path_is_hidden(u64 ino, const char *name)
 {
     struct sus_path_rule_facts f;
     struct sus_path_view v;
@@ -568,8 +491,8 @@ static bool sus_path_is_hidden(struct inode *dir, u64 ino, const char *name)
     if (sus_path_is_resolver() || !name)
         return false;
 
-    if (ino || dir) {
-        sus_path_rule_facts_dirent_at(dir, ino, name, &f);
+    if (ino) {
+        sus_path_rule_facts_dirent(ino, name, &f);
         if (f.matched) {
             sus_path_view_fill(&v, SUS_PATH_FACE_DIRENT, ino, 0, 0, 0,
                                name, &f);
@@ -585,8 +508,9 @@ static bool sus_path_is_hidden(struct inode *dir, u64 ino, const char *name)
 
 /* The same predicate as sus_path_is_hidden(), for the pre-emission layer in
  * sus_dirent.c.  no_extra does not gate it: it only suppresses the control node. */
-bool sus_path_dirent_hidden_at(struct inode *dir, u64 ino, const char *name)
+bool sus_path_dirent_hidden(u64 ino, const char *name)
 {
+
     /* The "no rule, no work" short circuit sus_path_dirent_filter() opens with, for the same
      * reason: without it every record of every listing takes this file's spinlock, even on a
      * device that has no rules at all - and the pre-emission layer calls this once per record,
@@ -594,12 +518,7 @@ bool sus_path_dirent_hidden_at(struct inode *dir, u64 ino, const char *name)
     if (!READ_ONCE(sus_path_count) && !hide_name[0])
         return false;
 
-    return sus_path_is_hidden(dir, ino, name);
-}
-
-bool sus_path_dirent_hidden(u64 ino, const char *name)
-{
-    return sus_path_dirent_hidden_at(NULL, ino, name);
+    return sus_path_is_hidden(ino, name);
 }
 
 /* ---- deferred resolution: upstream's CMD_SUSFS_ADD_SUS_PATH_LOOP ----
@@ -659,9 +578,6 @@ static int sus_path_resolve_pending(void)
     while (budget-- > 0) {
         struct sus_path_entry *e, *slot;
         struct inode *inode = NULL;
-        struct super_block *parent_sb = NULL;
-        struct inode *parent_inode = NULL;
-        u64 parent_ino = 0;
         const struct cred *saved;
         const struct cred *borrowed = NULL;
         struct path p;
@@ -703,9 +619,6 @@ static int sus_path_resolve_pending(void)
             if (inode) {
                 strscpy(name, p.dentry->d_name.name, sizeof(name));
                 ihold(inode);
-                if (!inode->i_ino)
-                    sus_path_capture_parent(p.dentry, &parent_sb,
-                                            &parent_inode, &parent_ino);
             }
         } else if (rc != atomic_read(&sus_path_pend_logged_rc)) {
             /* Report each distinct answer once: a rule that never resolves has to be
@@ -733,8 +646,6 @@ static int sus_path_resolve_pending(void)
         if (slot && inode && READ_ONCE(sus_path_lifetime_watch)) {
             spin_unlock(&sus_path_lock);
             rc = susfs_sb_watch_add(inode->i_sb);
-            if (!rc && parent_sb && parent_sb != inode->i_sb)
-                rc = susfs_sb_watch_add(parent_sb);
             if (rc)
                 atomic_set(&sus_path_pend_last_rc, rc);
             spin_lock(&sus_path_lock);
@@ -743,10 +654,6 @@ static int sus_path_resolve_pending(void)
             slot->sb = inode->i_sb;
             slot->dev = (u64)inode->i_sb->s_dev;
             slot->ino = (u64)inode->i_ino;
-            slot->parent_sb = parent_sb;
-            slot->parent_ino = parent_ino;
-            slot->parent_inode = parent_inode;
-            parent_inode = NULL;
             strscpy(slot->name, name, sizeof(slot->name));
             slot->inode = inode;
             inode = NULL;               /* the table holds the reference now */
@@ -774,8 +681,6 @@ static int sus_path_resolve_pending(void)
         } else if (!published && !rc) {
             atomic_inc(&sus_path_pend_lost);    /* walk ok, nothing to publish */
         }
-        if (parent_inode)
-            iput(parent_inode);
         if (have_path)
             path_put(&p);
     }
@@ -792,14 +697,16 @@ static int sus_path_resolve_pending(void)
     return resolved;
 }
 
-/* A rule was registered for a path that is not there yet: arm the retry timer
- * so the background worker resolves it cleanly without synchronous O(N^2) scans
- * during batch registration. */
+/* A rule was registered for a path that is not there yet: try once right away (an
+ * earlier add in the same batch may be what made this rule necessary), then let the
+ * timer keep trying.  Called from sus_path_supercall()'s task_work, i.e. process
+ * context. */
 static void sus_path_pending_arm(void)
 {
     if (READ_ONCE(sus_path_stopping) || !atomic_read(&sus_path_n_pending))
         return;
 
+    sus_path_resolve_pending();
     spin_lock(&sus_path_lock);
     if (!sus_path_stopping && atomic_read(&sus_path_n_pending)) {
         atomic_set(&sus_path_pending_tries, 0);
@@ -1234,8 +1141,6 @@ static void sus_path_view_fill(struct sus_path_view *v, enum sus_path_face face,
                                const char *name,
                                const struct sus_path_rule_facts *f)
 {
-    bool ctrl_vis = susfs_control_visible();
-
     memset(v, 0, sizeof(*v));
     v->face = face;
     v->ino = ino;
@@ -1251,10 +1156,9 @@ static void sus_path_view_fill(struct sus_path_view *v, enum sus_path_face face,
     v->user_rule = f->user_rule;
     v->caller_uid = current_uid().val;
     v->caller_is_app = susfs_is_current_proc_umounted_app();
-    v->caller_is_su = ctrl_vis;
-    v->caller_path_allowed = susfs_is_sus_path_uid_allowed(v->caller_uid);
+    v->caller_is_su = susfs_control_visible();
     v->hide_from_apps = sus_path_hide_from_apps();
-    v->control_visible = ctrl_vis;
+    v->control_visible = susfs_control_visible();
 }
 
 int sus_path_rule_facts_inode(struct inode *inode,
@@ -1301,40 +1205,20 @@ int sus_path_rule_facts_inode(struct inode *inode,
     return 0;
 }
 
-static bool sus_path_entry_matches_parent(const struct sus_path_entry *e,
-                                          struct inode *dir)
-{
-    if (!dir || !e->parent_sb || e->parent_sb != dir->i_sb)
-        return false;
-    if (e->parent_inode)
-        return e->parent_inode == dir;
-    return e->parent_ino && e->parent_ino == (u64)dir->i_ino;
-}
-
-int sus_path_rule_facts_dirent_at(struct inode *dir, u64 ino, const char *name,
-                                  struct sus_path_rule_facts *facts)
+int sus_path_rule_facts_dirent(u64 ino, const char *name,
+                               struct sus_path_rule_facts *facts)
 {
     struct sus_path_entry *e;
 
     if (!facts)
         return -EINVAL;
     memset(facts, 0, sizeof(*facts));
-    if ((!ino && !dir) || !name || !READ_ONCE(sus_path_count))
+    if (!ino || !name || !READ_ONCE(sus_path_count))
         return 0;
 
     spin_lock(&sus_path_lock);
     list_for_each_entry(e, &sus_path_list, list) {
-        bool hit = false;
-
-        if (e->ino && ino) {
-            if (e->ino == ino && e->name[0] == name[0] && !strcmp(e->name, name))
-                hit = true;
-        } else if (e->inode && !e->ino) {
-            if (e->name[0] == name[0] && !strcmp(e->name, name) &&
-                sus_path_entry_matches_parent(e, dir))
-                hit = true;
-        }
-        if (!hit)
+        if (!e->ino || e->ino != ino || strcmp(e->name, name))
             continue;
         facts->matched = true;
         if (e->self_protect)
@@ -1346,12 +1230,6 @@ int sus_path_rule_facts_dirent_at(struct inode *dir, u64 ino, const char *name,
     }
     spin_unlock(&sus_path_lock);
     return 0;
-}
-
-int sus_path_rule_facts_dirent(u64 ino, const char *name,
-                               struct sus_path_rule_facts *facts)
-{
-    return sus_path_rule_facts_dirent_at(NULL, ino, name, facts);
 }
 
 static bool sus_path_inode_hidden(struct inode *inode)
@@ -1377,103 +1255,6 @@ static bool sus_path_inode_hidden(struct inode *inode)
                        (u64)inode->i_sb->s_dev, inode->i_uid.val,
                        inode->i_sb->s_magic, NULL, &f);
     return sus_path_decide_core(&v) == SUS_PATH_HIDE;
-}
-
-struct sus_path_permission_args {
-    struct inode *inode;
-};
-
-static unsigned int sus_path_permission_inode_arg;
-static atomic_t n_permission_entries = ATOMIC_INIT(0);
-static atomic_t n_permission_returns = ATOMIC_INIT(0);
-static atomic_t n_permission_rewrites = ATOMIC_INIT(0);
-
-static int sus_path_permission_entry(struct kretprobe_instance *ri,
-                                     struct pt_regs *regs)
-{
-    struct sus_path_permission_args *args = (void *)ri->data;
-    struct inode *inode = (void *)regs_get_kernel_argument(
-        regs, sus_path_permission_inode_arg);
-
-    atomic_inc(&n_permission_entries);
-    args->inode = NULL;
-    if (!sus_path_inode_hidden(inode))
-        return 1;
-    args->inode = inode;
-    return 0;
-}
-
-static int sus_path_permission_return(struct kretprobe_instance *ri,
-                                      struct pt_regs *regs)
-{
-    struct sus_path_permission_args *args = (void *)ri->data;
-    int ret = (int)regs_return_value(regs);
-
-    atomic_inc(&n_permission_returns);
-    if (ret == -ECHILD || ret == -ENOENT ||
-        !sus_path_inode_hidden(args->inode))
-        return 0;
-    regs_set_return_value(regs, -ENOENT);
-    atomic_inc(&n_permission_rewrites);
-    atomic_inc(&n_enoent_perm);
-    return 0;
-}
-
-static struct kretprobe sus_path_permission_probe = {
-    .entry_handler = sus_path_permission_entry,
-    .handler = sus_path_permission_return,
-    .data_size = sizeof(struct sus_path_permission_args),
-    .maxactive = 128,
-};
-
-static int sus_path_permission_register(void)
-{
-    static const char *const plain[] = { "inode*", "int" };
-    static const char *const userns[] = { "user_namespace*", "inode*", "int" };
-    static const char *const idmap[] = { "mnt_idmap*", "inode*", "int" };
-    unsigned long addresses[2];
-    int count, ret;
-
-    ret = susfs_btf_layout_init();
-    if (ret)
-        return ret;
-    ret = susfs_btf_check_function("inode_permission", "int", plain,
-                                    ARRAY_SIZE(plain));
-    if (!ret) {
-        sus_path_permission_inode_arg = 0;
-    } else {
-        ret = susfs_btf_check_function("inode_permission", "int", userns,
-                                        ARRAY_SIZE(userns));
-        if (ret)
-            ret = susfs_btf_check_function("inode_permission", "int", idmap,
-                                            ARRAY_SIZE(idmap));
-        if (ret)
-            return ret;
-        sus_path_permission_inode_arg = 1;
-    }
-    count = ksu_find_symbol_all("inode_permission", addresses,
-                                ARRAY_SIZE(addresses));
-    if (count != 1 || !ksu_symbol_is_start(addresses[0], "inode_permission"))
-        return -EOPNOTSUPP;
-    sus_path_permission_probe.kp.addr = (kprobe_opcode_t *)addresses[0];
-    ret = register_kretprobe(&sus_path_permission_probe);
-    if (ret) {
-        susfs_krp_forget_addr(&sus_path_permission_probe);
-        return ret;
-    }
-    WRITE_ONCE(sus_path_permission_registered, true);
-    SUSFS_LOGI("sus_path: inode_permission return hook armed (inode_arg=%u maxactive=%d)\n",
-               sus_path_permission_inode_arg, sus_path_permission_probe.maxactive);
-    return 0;
-}
-
-static void sus_path_permission_unregister(void)
-{
-    if (!sus_path_permission_registered)
-        return;
-    unregister_kretprobe(&sus_path_permission_probe);
-    susfs_krp_forget_addr(&sus_path_permission_probe);
-    WRITE_ONCE(sus_path_permission_registered, false);
 }
 
 /* The same decision, published for the layers that hold the inode the kernel resolved instead
@@ -2225,7 +2006,7 @@ static long sus_path_filter(unsigned long buf, long count,
         if (!head_reclen)
             head_reclen = reclen;
 
-        hide = sus_path_is_hidden(NULL, (u64)ino, name);
+        hide = sus_path_is_hidden((u64)ino, name);
 
         if (hide) {
             /* Dropped.  Every record after it moves down by its length, so the
@@ -2576,14 +2357,6 @@ static int sus_path_format_list(char *buf, size_t size)
     n = sus_path_list_puts(buf, n, &trunc,
                    "dirent: pending=%d (counters: /proc/susfs_kstat)\n",
                    atomic_read(&sus_path_n_pending));
-    n = sus_path_list_puts(buf, n, &trunc,
-                   "permission: armed=%d inode_arg=%u entries=%d returns=%d rewrites=%d maxactive=%d nmissed=%d kp_nmissed=%lu\n",
-                   (int)READ_ONCE(sus_path_permission_registered),
-                   sus_path_permission_inode_arg, atomic_read(&n_permission_entries),
-                   atomic_read(&n_permission_returns), atomic_read(&n_permission_rewrites),
-                   sus_path_permission_probe.maxactive,
-                   READ_ONCE(sus_path_permission_probe.nmissed),
-                   READ_ONCE(sus_path_permission_probe.kp.nmissed));
     if (n_lsm_ext_fail)
         n = sus_path_list_puts(buf, n, &trunc,
                        "lsm: %d secondary hook(s) FAILED (first: %s) - that operation is not covered\n",
@@ -2811,8 +2584,6 @@ static int sus_path_publish_entry(struct sus_path_entry *e, bool merge_pending)
     }
     if (e->inode && READ_ONCE(sus_path_lifetime_watch)) {
         rc = susfs_sb_watch_add(e->sb);
-        if (!rc && e->parent_sb && e->parent_sb != e->sb)
-            rc = susfs_sb_watch_add(e->parent_sb);
         if (rc) {
             mutex_unlock(&sus_path_lifecycle_lock);
             return rc;
@@ -2830,10 +2601,6 @@ static int sus_path_publish_entry(struct sus_path_entry *e, bool merge_pending)
             cur->sb = e->sb;
             cur->dev = e->dev;
             cur->ino = e->ino;
-            cur->parent_sb = e->parent_sb;
-            cur->parent_ino = e->parent_ino;
-            cur->parent_inode = e->parent_inode;
-            e->parent_inode = NULL;
             strscpy(cur->name, e->name, sizeof(cur->name));
             /* e was armed before publish: its inode points at our i_op copy and e->orig_iop
              * holds the original.  The copy now belongs to cur, so the original must move with
@@ -2870,71 +2637,44 @@ out:
 static int sus_path_add_hidden_ex(const char *path, bool self_protect)
 {
     struct path p;
-    struct inode *inode = NULL;
+    struct inode *inode;
     struct sus_path_entry *e;
-    bool have_path = false;
     int rc;
 
-    if (!path || !path[0])
-        return -EINVAL;
-    rc = sus_path_walk_exempt(path, LOOKUP_FOLLOW, &p);
-    if (!rc) {
-        have_path = true;
-        inode = d_inode(p.dentry);
-        if (!inode)
-            rc = -ENOENT;
-    }
-    if (rc && (rc != -ENOENT || !READ_ONCE(auto_pending))) {
-        if (have_path)
-            path_put(&p);
+    rc = kern_path(path, LOOKUP_FOLLOW, &p);
+    if (rc)
         return rc;
+    inode = d_inode(p.dentry);
+    if (!inode) {
+        path_put(&p);
+        return -ENOENT;
     }
     e = kzalloc(sizeof(*e), GFP_KERNEL);
     if (!e) {
-        if (have_path)
-            path_put(&p);
+        path_put(&p);
         return -ENOMEM;
     }
+    e->sb = inode->i_sb;
+    e->dev = (u64)inode->i_sb->s_dev;
+    e->ino = (u64)inode->i_ino;
+    e->inode = inode;
     e->self_protect = self_protect;
-    if (inode) {
-        e->sb = inode->i_sb;
-        e->dev = (u64)inode->i_sb->s_dev;
-        e->ino = (u64)inode->i_ino;
-        e->inode = inode;
-        ihold(inode);
-        sus_path_set_parent(e, p.dentry);
-        if (sus_path_iop_arm(e))
-            atomic_inc(&n_iop_arm_fail);
-        strscpy(e->name, p.dentry->d_name.name, sizeof(e->name));
-    }
+    ihold(inode);
+    if (sus_path_iop_arm(e))
+        atomic_inc(&n_iop_arm_fail);
+    strscpy(e->name, p.dentry->d_name.name, sizeof(e->name));
     sus_path_entry_set_path(e, path);
-    if (!inode)
-        sus_path_basename(e->path, e->name, sizeof(e->name));
     INIT_LIST_HEAD(&e->list);
-    rc = sus_path_publish_entry(e, true);
+    rc = sus_path_publish_entry(e, false);
     if (rc) {
-        if (e->inode) {
-            sus_path_iop_restore(e);
-            iput(e->inode);
-        }
-        if (e->parent_inode)
-            iput(e->parent_inode);
+        sus_path_iop_restore(e);
+        iput(e->inode);
         kfree(e);
     }
-    if (have_path)
-        path_put(&p);
+    path_put(&p);
     if (rc < 0)
         return rc;
-    if (!dirent_tmp) {
-        dirent_tmp = kvmalloc(DIRENT_BUF_SIZE, GFP_KERNEL);
-        if (!dirent_tmp)
-            pr_warn("sus_path: dirent scratch buffer unavailable, listings remain unfiltered\n");
-    }
     sus_path_hooks_arm();
-    if (!inode)
-        sus_path_save_caller_cred();
-    if (atomic_read(&sus_path_n_pending))
-        sus_path_pending_arm();
     return 0;
 }
 
@@ -2950,11 +2690,143 @@ int sus_path_add_hidden(const char *path)
 	return sus_path_add_hidden_ex(path, false);
 }
 
-/* Whether the path-based layer actually installed: both hooks must be patched, or stat and open
- * would disagree with each other. */
+/* Registration wrappers: sus_path is the LSM backend's first consumer, so the
+ * centre owns the ksu_register_lsm_hook()/unregister pair just like it owns
+ * probe installation for the other layers. */
+#define SUS_PATH_REG(var, nm) \
+	static struct susfs_hook sus_path_reg_##var = { \
+		.owner = "sus_path", .name = nm, \
+		.target = SUSFS_HOOK_TARGET_LSM, \
+		.lsm = &sus_path_##var, \
+	}
+
+SUS_PATH_REG(getattr_hook, "inode_getattr");
+SUS_PATH_REG(perm_hook, "inode_permission");
+SUS_PATH_REG(unlink_hook, "inode_unlink");
+SUS_PATH_REG(rmdir_hook, "inode_rmdir");
+SUS_PATH_REG(rename_hook, "inode_rename");
+SUS_PATH_REG(link_hook, "inode_link");
+SUS_PATH_REG(statfs_hook, "sb_statfs");
+SUS_PATH_REG(setattr_hook, "inode_setattr");
+SUS_PATH_REG(getxattr_hook, "inode_getxattr");
+SUS_PATH_REG(listxattr_hook, "inode_listxattr");
+SUS_PATH_REG(setxattr_hook, "inode_setxattr");
+SUS_PATH_REG(removexattr_hook, "inode_removexattr");
+SUS_PATH_REG(notify_hook, "path_notify");
+SUS_PATH_REG(readlink_hook, "inode_readlink");
+
+/* VFS fast face for open: vfs_open is called for every successful path walk, so
+ * answering ENOENT there ends the open before permission/LSM work for a hidden
+ * inode.  Experimental: the device check has not produced a confirmed hidden
+ * open yet, so it is OFF unless the parameter asks for it and the LSM hooks
+ * remain the only mechanism by default. */
+static bool sus_path_open_hooked;
+static bool sus_path_lookup_file_hooked;
+static bool sus_path_openat_hooked;
+static int vfs_inline = 1;
+module_param(vfs_inline, int, 0644);
+static atomic_t n_vfs_open_enter = ATOMIC_INIT(0);
+static atomic_t n_vfs_open_hidden = ATOMIC_INIT(0);
+
+static int sus_path_vfs_open_pre(void *p)
+{
+	struct susfs_inode_ctx *ctx = p;
+	unsigned int n;
+
+	if (!READ_ONCE(sus_path_count))
+		return 0;
+	/* unsigned: an int counter wraps negative after ~2^31 calls and every
+	 * "n <= 8" would then log once per entry, forever.  Wrapping at 2^32 only
+	 * re-prints the first few lines. */
+	n = (unsigned int)atomic_inc_return(&n_vfs_open_enter);
+
+	if (n <= 8u)
+		pr_info("sus_path: vfs open enter #%u ino=%lu dev=%u\n", n,
+			ctx->inode ? (unsigned long)ctx->inode->i_ino : 0UL,
+			ctx->inode ? (unsigned int)ctx->inode->i_sb->s_dev : 0U);
+	if (ctx->inode && sus_path_inode_hidden(ctx->inode)) {
+		if ((unsigned int)atomic_inc_return(&n_vfs_open_hidden) <= 5u)
+			pr_info("sus_path: vfs_open hidden ino=%lu dev=%u\n",
+				(unsigned long)ctx->inode->i_ino,
+				(unsigned int)ctx->inode->i_sb->s_dev);
+		atomic_inc(&n_enoent_perm);
+		ctx->ret = -ENOENT;
+		return 1;
+	}
+	return 0;
+}
+
+static struct susfs_hook sus_path_open_vfs = {
+	.owner = "sus_path",
+	.name = "vfs:vfs_open",
+	.target = SUSFS_HOOK_TARGET_VFS_OPEN,
+	.pre = sus_path_vfs_open_pre,
+};
+
+/* The lookup face: one landing pad in fs/namei.c covers every path-based
+ * operation (open/stat/access/unlink/rename/xattr), so it is preferred over
+ * the per-operation VFS hooks.  It is only armed when the loader proved
+ * path_lookupat is out of line (map bit PATH_LOOKUPAT). */
+static bool sus_path_lookup_hooked;
+static atomic_t n_lookup_enter = ATOMIC_INIT(0);
+
+static atomic_t n_lookup_hidden = ATOMIC_INIT(0);
+
+static int sus_path_lookup_pre(void *p)
+{
+	struct susfs_inode_ctx *ctx = p;
+	unsigned int n;
+
+	/* Sparse case: with no rule the inline face must cost almost nothing, so
+	 * the count is checked before any counter or hash work. */
+	if (!READ_ONCE(sus_path_count))
+		return 0;
+	n = (unsigned int)atomic_inc_return(&n_lookup_enter);
+
+	if (n <= 8u)
+		pr_info("sus_path: path_lookupat enter #%u ino=%lu dev=%u\n", n,
+			ctx->inode ? (unsigned long)ctx->inode->i_ino : 0UL,
+			ctx->inode ? (unsigned int)ctx->inode->i_sb->s_dev : 0U);
+	if (ctx->inode && sus_path_inode_hidden(ctx->inode)) {
+		if ((unsigned int)atomic_inc_return(&n_lookup_hidden) <= 5u)
+			pr_info("sus_path: lookup hidden ino=%lu dev=%u\n",
+				(unsigned long)ctx->inode->i_ino,
+				(unsigned int)ctx->inode->i_sb->s_dev);
+		atomic_inc(&n_enoent_perm);
+		ctx->ret = -ENOENT;
+		return 1;
+	}
+	return 0;
+}
+
+static struct susfs_hook sus_path_lookup_vfs = {
+	.owner = "sus_path",
+	.name = "fs:path_lookupat",
+	.target = SUSFS_HOOK_TARGET_PATH_LOOKUPAT,
+	.pre = sus_path_lookup_pre,
+};
+
+static struct susfs_hook sus_path_lookup_file = {
+	.owner = "sus_path",
+	.name = "fs:filename_lookup",
+	.target = SUSFS_HOOK_TARGET_FILENAME_LOOKUP,
+	.pre = sus_path_lookup_pre,
+};
+
+static struct susfs_hook sus_path_openat_vfs = {
+	.owner = "sus_path",
+	.name = "fs:path_openat",
+	.target = SUSFS_HOOK_TARGET_PATH_OPENAT,
+	.pre = sus_path_lookup_pre,
+};
+
+/* Whether the path-based layer actually hides: the first inline face that
+ * installed, or the LSM pair when no inline is available. */
 bool sus_path_lsm_active(void)
 {
-	return sus_path_getattr_hook.entry && sus_path_perm_hook.entry;
+	return sus_path_lookup_file_hooked || sus_path_lookup_hooked ||
+	       sus_path_openat_hooked || sus_path_open_hooked ||
+	       (sus_path_getattr_hook.entry && sus_path_perm_hook.entry);
 }
 
 int sus_path_init(void)
@@ -2991,72 +2863,105 @@ int sus_path_init(void)
     SUSFS_LOGI("sus_path: dirent rewrite rides the stat layer's table entries (no probe of its own)\n");
 
 
-    /* LSM hooks: reject path-based access to registered inodes outright.  These two ARE the
-     * mechanism - a registered path is hidden only because this layer answers ENOENT.  A failure
-     * here used to be a warning with a zero return, so add_sus_path() reported success while
-     * nothing was hidden; loading now fails instead. */
-    rc = ksu_register_lsm_hook(&sus_path_getattr_hook);
-    if (rc) {
-        pr_err("sus_path: getattr hook failed %d - nothing would be hidden, refusing to load\n", rc);
-        /* The scratch buffer is already allocated; the caller is about to fail the load, and a
-         * vmalloc'd buffer is not part of the module's own memory, so nobody else would free it. */
-        kvfree(dirent_tmp);
-        dirent_tmp = NULL;
-        return rc;
-    }
-    SUSFS_LOGI("sus_path: getattr hook inserted ahead of the chain (node %px)\n",
-            (void *)sus_path_getattr_hook.entry);
+    /* Priority: filename_lookup > path_lookupat > vfs_* > LSM, with one
+     * measured caveat: open() does NOT go through filename_lookup or
+     * path_lookupat on this tree - it has its own do_filp_open/path_openat
+     * entry - so the lookup faces alone leave open() uncovered.  The lookup
+     * faces are therefore both armed (for stat/access/unlink/rename/xattr/
+     * readlink) AND vfs_open is armed for open(); the LSM set is only used
+     * when no inline face is available at all.  Every face answers ENOENT
+     * for a hidden inode. */
+    if (vfs_inline) {
+        sus_path_lookup_file_hooked =
+            !susfs_hook_register_assign(&sus_path_lookup_file,
+                                        SUSFS_HOOK_BACKEND_INLINE);
+        if (sus_path_lookup_file_hooked)
+            SUSFS_LOGI("sus_path: filename_lookup answered at the VFS layer (inline)\n");
 
-    rc = ksu_register_lsm_hook(&sus_path_perm_hook);
-    if (rc) {
-        pr_err("sus_path: perm hook failed %d - nothing would be hidden, refusing to load\n", rc);
-        ksu_unregister_lsm_hook(&sus_path_getattr_hook);
-        kvfree(dirent_tmp);
-        dirent_tmp = NULL;
-        return rc;
-    }
-    SUSFS_LOGI("sus_path: perm hook inserted ahead of the chain (node %px)\n",
-            (void *)sus_path_perm_hook.entry);
+        sus_path_lookup_hooked =
+            !susfs_hook_register_assign(&sus_path_lookup_vfs,
+                                        SUSFS_HOOK_BACKEND_INLINE);
+        if (sus_path_lookup_hooked)
+            SUSFS_LOGI("sus_path: path_lookupat answered at the VFS layer (inline)\n");
 
-    rc = sus_path_permission_register();
-    if (rc)
-        pr_warn("sus_path: inode_permission return hook unavailable (%d); falling back to mode relax\n",
-                rc);
+        sus_path_openat_hooked =
+            !susfs_hook_register_assign(&sus_path_openat_vfs,
+                                        SUSFS_HOOK_BACKEND_INLINE);
+        if (sus_path_openat_hooked)
+            SUSFS_LOGI("sus_path: path_openat answered at the VFS layer (inline)\n");
 
-    /* Name-based and metadata operations: without these an app that can write the parent directory
-     * can delete or rename a hidden file, and a hidden file can still be probed or modified through
-     * statfs/xattr/inotify - or answered with EPERM/EACCES, which says it exists. */
-    {
-        struct ksu_lsm_hook *extra[] = {
-            &sus_path_unlink_hook, &sus_path_rmdir_hook,
-            &sus_path_rename_hook, &sus_path_link_hook,
-            &sus_path_statfs_hook, &sus_path_setattr_hook,
-            &sus_path_getxattr_hook, &sus_path_listxattr_hook,
-            &sus_path_setxattr_hook, &sus_path_removexattr_hook,
-            &sus_path_notify_hook,
-            &sus_path_readlink_hook,
-        };
-        int i;
-
-        for (i = 0; i < (int)ARRAY_SIZE(extra); i++) {
-            rc = ksu_register_lsm_hook(extra[i]);
-            if (rc) {
-                /* Not fatal - the core two hooks are up, so a hidden path is still hidden -
-                 * but one class of operation is NOT covered, so it is counted and named in
-                 * hide_list rather than only logged. */
-                if (!n_lsm_ext_fail)
-                    first_lsm_ext_fail = extra[i]->head_name;
-                n_lsm_ext_fail++;
-                pr_warn("sus_path: %s hook failed %d - that operation will not be covered\n",
-                        extra[i]->head_name, rc);
-            } else {
-                SUSFS_LOGI("sus_path: %s hook inserted ahead of the chain (node %px)\n",
-                        extra[i]->head_name, (void *)extra[i]->entry);
-            }
+        if (!sus_path_openat_hooked) {
+            sus_path_open_hooked =
+                !susfs_hook_register_assign(&sus_path_open_vfs,
+                                            SUSFS_HOOK_BACKEND_INLINE);
+            if (sus_path_open_hooked)
+                SUSFS_LOGI("sus_path: vfs_open answered at the VFS layer (inline)\n");
         }
-        if (n_lsm_ext_fail)
-            pr_warn("sus_path: %d/%d secondary hooks failed (first: %s)\n",
-                    n_lsm_ext_fail, (int)ARRAY_SIZE(extra), first_lsm_ext_fail);
+    }
+    if (!sus_path_lookup_file_hooked && !sus_path_lookup_hooked &&
+        !sus_path_openat_hooked && !sus_path_open_hooked) {
+        /* No inline is usable: the LSM hooks ARE the mechanism.  A failure of
+         * the two core ones used to be a warning with a zero return, so
+         * add_sus_path() reported success while nothing was hidden; loading
+         * now fails instead. */
+        rc = susfs_hook_register(&sus_path_reg_getattr_hook);
+        if (rc < 0) {
+            pr_err("sus_path: getattr hook failed %d - nothing would be hidden, refusing to load\n", rc);
+            kvfree(dirent_tmp);
+            dirent_tmp = NULL;
+            return rc;
+        }
+        SUSFS_LOGI("sus_path: getattr hook inserted ahead of the chain (node %px)\n",
+                (void *)sus_path_getattr_hook.entry);
+
+        rc = susfs_hook_register(&sus_path_reg_perm_hook);
+        if (rc < 0) {
+            pr_err("sus_path: perm hook failed %d - nothing would be hidden, refusing to load\n", rc);
+            susfs_hook_unregister(&sus_path_reg_getattr_hook);
+            kvfree(dirent_tmp);
+            dirent_tmp = NULL;
+            return rc;
+        }
+        SUSFS_LOGI("sus_path: perm hook inserted ahead of the chain (node %px)\n",
+                (void *)sus_path_perm_hook.entry);
+
+        /* Name-based and metadata operations: without these an app that can write the parent directory
+         * can delete or rename a hidden file, and a hidden file can still be probed or modified through
+         * statfs/xattr/inotify - or answered with EPERM/EACCES, which says it exists. */
+        {
+            struct susfs_hook *extra[] = {
+                &sus_path_reg_unlink_hook, &sus_path_reg_rmdir_hook,
+                &sus_path_reg_rename_hook, &sus_path_reg_link_hook,
+                &sus_path_reg_statfs_hook, &sus_path_reg_setattr_hook,
+                &sus_path_reg_getxattr_hook, &sus_path_reg_listxattr_hook,
+                &sus_path_reg_setxattr_hook, &sus_path_reg_removexattr_hook,
+                &sus_path_reg_notify_hook,
+                &sus_path_reg_readlink_hook,
+            };
+            int i;
+
+            for (i = 0; i < (int)ARRAY_SIZE(extra); i++) {
+                rc = susfs_hook_register(extra[i]);
+                if (rc < 0) {
+                    /* Not fatal - the core two hooks are up, so a hidden path is still hidden -
+                     * but one class of operation is NOT covered, so it is counted and named in
+                     * hide_list rather than only logged. */
+                    if (!n_lsm_ext_fail)
+                        first_lsm_ext_fail = extra[i]->name;
+                    n_lsm_ext_fail++;
+                    pr_warn("sus_path: %s hook failed %d - that operation will not be covered\n",
+                            extra[i]->name, rc);
+                } else {
+                    SUSFS_LOGI("sus_path: %s hook inserted ahead of the chain (node %px)\n",
+                            extra[i]->name, (void *)extra[i]->lsm->entry);
+                }
+            }
+            if (n_lsm_ext_fail)
+                pr_warn("sus_path: %d/%d secondary hooks failed (first: %s)\n",
+                        n_lsm_ext_fail, (int)ARRAY_SIZE(extra), first_lsm_ext_fail);
+        }
+    } else {
+        SUSFS_LOGI("sus_path: hidden at an inline face; the LSM hooks are not installed\n");
     }
 
     /* The DAC probes, the syscall-entry kprobes and the path-string probes are DELETED, not
@@ -3138,28 +3043,43 @@ void sus_path_exit(void)
     mutex_unlock(&sus_path_pending_lock);
     /* No walk can be in flight now, so the borrowed creds are ours to release. */
     sus_path_drop_caller_cred();
-    sus_path_permission_unregister();
+    if (sus_path_lookup_file_hooked) {
+        susfs_hook_unregister(&sus_path_lookup_file);
+        sus_path_lookup_file_hooked = false;
+    }
+    if (sus_path_lookup_hooked) {
+        susfs_hook_unregister(&sus_path_lookup_vfs);
+        sus_path_lookup_hooked = false;
+    }
+    if (sus_path_openat_hooked) {
+        susfs_hook_unregister(&sus_path_openat_vfs);
+        sus_path_openat_hooked = false;
+    }
+    if (sus_path_open_hooked) {
+        susfs_hook_unregister(&sus_path_open_vfs);
+        sus_path_open_hooked = false;
+    }
     if (sus_path_perm_hook.entry)
-        ksu_unregister_lsm_hook(&sus_path_perm_hook);
+        susfs_hook_unregister(&sus_path_reg_perm_hook);
     {
-        struct ksu_lsm_hook *extra[] = {
-            &sus_path_unlink_hook, &sus_path_rmdir_hook,
-            &sus_path_rename_hook, &sus_path_link_hook,
-            &sus_path_statfs_hook, &sus_path_setattr_hook,
-            &sus_path_getxattr_hook, &sus_path_listxattr_hook,
-            &sus_path_setxattr_hook, &sus_path_removexattr_hook,
-            &sus_path_notify_hook,
-            &sus_path_readlink_hook,
+        struct susfs_hook *extra[] = {
+            &sus_path_reg_unlink_hook, &sus_path_reg_rmdir_hook,
+            &sus_path_reg_rename_hook, &sus_path_reg_link_hook,
+            &sus_path_reg_statfs_hook, &sus_path_reg_setattr_hook,
+            &sus_path_reg_getxattr_hook, &sus_path_reg_listxattr_hook,
+            &sus_path_reg_setxattr_hook, &sus_path_reg_removexattr_hook,
+            &sus_path_reg_notify_hook,
+            &sus_path_reg_readlink_hook,
         };
         int i;
 
         for (i = 0; i < (int)ARRAY_SIZE(extra); i++) {
-            if (extra[i]->entry)
-                ksu_unregister_lsm_hook(extra[i]);
+            if (extra[i]->lsm->entry)
+                susfs_hook_unregister(extra[i]);
         }
     }
     if (sus_path_getattr_hook.entry)
-        ksu_unregister_lsm_hook(&sus_path_getattr_hook);
+        susfs_hook_unregister(&sus_path_reg_getattr_hook);
 
     kvfree(dirent_tmp);
     dirent_tmp = NULL;
@@ -3194,8 +3114,7 @@ void sus_path_supercall(unsigned int cmd, void __user **arg)
     struct path path;
     struct inode *inode = NULL;
     bool have_path = false;
-    bool has_parent = false;
-    bool pending_ok = (cmd == CMD_SUSFS_ADD_SUS_PATH_LOOP) || READ_ONCE(auto_pending);
+    bool pending_ok = (cmd == CMD_SUSFS_ADD_SUS_PATH_LOOP);
     int rc;
 
     if (copy_from_user(&info, (void __user *)*arg, sizeof(info))) {
@@ -3214,7 +3133,7 @@ void sus_path_supercall(unsigned int cmd, void __user **arg)
         info.err = -ESHUTDOWN;
         goto out;
     }
-    rc = sus_path_walk_exempt(info.target_pathname, LOOKUP_FOLLOW, &path);
+    rc = kern_path(info.target_pathname, LOOKUP_FOLLOW, &path);
     if (!rc) {
         have_path = true;
         inode = d_inode(path.dentry);
@@ -3236,8 +3155,6 @@ void sus_path_supercall(unsigned int cmd, void __user **arg)
         e->ino = (u64)inode->i_ino;
         e->inode = inode;
         ihold(inode);
-        sus_path_set_parent(e, path.dentry);
-        has_parent = (e->parent_sb != NULL);
         if (sus_path_iop_arm(e))
             atomic_inc(&n_iop_arm_fail);
         strscpy(e->name, path.dentry->d_name.name, sizeof(e->name));
@@ -3252,21 +3169,15 @@ void sus_path_supercall(unsigned int cmd, void __user **arg)
             sus_path_iop_restore(e);
             iput(e->inode);
         }
-        if (e->parent_inode)
-            iput(e->parent_inode);
         kfree(e);
     }
     if (rc < 0) {
         info.err = rc;
         goto out;
     }
-    if (inode && !inode->i_ino) {
-        if (has_parent)
-            SUSFS_LOGI("sus_path: entry reports ino 0 - using parent-scoped dirent filter\n");
-        else
-            pr_warn("sus_path: '%s' reports ino 0 - hidden by inode, but a directory listing cannot be filtered for it\n",
-                    info.target_pathname);
-    }
+    if (inode && !inode->i_ino)
+        pr_warn("sus_path: '%s' reports ino 0 - hidden by inode, but a directory listing cannot be filtered for it\n",
+                info.target_pathname);
     if (have_path) {
         path_put(&path);
         have_path = false;
@@ -3277,10 +3188,10 @@ void sus_path_supercall(unsigned int cmd, void __user **arg)
             pr_warn("sus_path: dirent scratch buffer unavailable, listings remain unfiltered\n");
     }
     sus_path_hooks_arm();
-    if (!inode)
+    if (!inode) {
         sus_path_save_caller_cred();
-    if (atomic_read(&sus_path_n_pending))
         sus_path_pending_arm();
+    }
     info.err = 0;
 out:
     if (have_path)

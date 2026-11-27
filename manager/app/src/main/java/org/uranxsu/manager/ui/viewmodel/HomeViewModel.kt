@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.uranxsu.manager.R
 import org.uranxsu.manager.data.count.CountRepository
+import org.uranxsu.manager.data.ksud.KsudIntegrityRepository
 import org.uranxsu.manager.data.module.ModuleRepository
 import org.uranxsu.manager.data.packageinfo.SuperUserRepository
 import org.uranxsu.manager.data.shell.KsuCliRepository
@@ -43,10 +45,12 @@ sealed interface HomeUiAction {
     data class SetNavigationBarBadge(val enabled: Boolean) : HomeUiAction
     data class SetHomeCardIcons(val enabled: Boolean) : HomeUiAction
     data class Reboot(val reason: String) : HomeUiAction
+    data object SyncKsud : HomeUiAction
 }
 
 sealed interface HomeUiEvent {
     data class Error(val message: String) : HomeUiEvent
+    data class Info(val stringRes: Int) : HomeUiEvent
 }
 
 class HomeViewModel(
@@ -55,6 +59,7 @@ class HomeViewModel(
     moduleRepository: ModuleRepository,
     private val countRepository: CountRepository,
     private val ksuCliRepository: KsuCliRepository,
+    private val ksudIntegrityRepository: KsudIntegrityRepository,
     private val checkManagerUpdate: CheckManagerUpdateUseCase,
     private val getKernelStatus: GetKernelStatusUseCase,
     private val getManagerRuntimeInfo: GetManagerRuntimeInfoUseCase,
@@ -85,8 +90,6 @@ class HomeViewModel(
             systemInfo = homeState.systemInfo.copy(
                 moduleCount = moduleCount,
                 superuserCount = superuserCount,
-                zygiskImplement = ksuCliRepository.getZygiskImplement(),
-                metaModuleImplement = ksuCliRepository.getMetaModuleImplement(),
             ),
         )
     }.flowOn(Dispatchers.IO).stateIn(
@@ -137,9 +140,15 @@ class HomeViewModel(
                     }
                     val managers = async { getManagerRuntimeInfo() }
                     val susfs = async { getSuSFSStatus() }
+                    val zygisk = async { runCatching { ksuCliRepository.getZygiskImplement() }.getOrDefault("None") }
+                    val metamodule = async { runCatching { ksuCliRepository.getMetaModuleImplement() }.getOrDefault("None") }
+                    val ksudIntegrity = async { ksudIntegrityRepository.checkStatus() }
                     val basicInfo = basic.await()
                     val managerInfo = managers.await()
                     val susfsInfo = susfs.await()
+                    val zygiskImplement = zygisk.await()
+                    val metaModuleImplement = metamodule.await()
+                    val ksudSnapshot = ksudIntegrity.await()
                     homeStateRepository.update { current ->
                         current.copy(
                             systemInfo = HomeSystemInfo(
@@ -156,7 +165,10 @@ class HomeViewModel(
                                 susfsFeatures = susfsInfo.enabledFeatures,
                                 managersList = managerInfo,
                                 isDynamicSignEnabled = managerInfo.dynamicSignatureEnabled,
+                                zygiskImplement = zygiskImplement,
+                                metaModuleImplement = metaModuleImplement,
                                 seccompStatus = basicInfo.seccompStatus,
+                                ksudIntegrity = ksudSnapshot,
                             ),
                             isInitialDataLoaded = true,
                             isExtendedDataLoaded = true,
@@ -200,6 +212,19 @@ class HomeViewModel(
                 reboot(action.reason).onFailure {
                     mutableEvents.tryEmit(HomeUiEvent.Error(it.message.orEmpty()))
                 }
+            }
+
+            HomeUiAction.SyncKsud -> viewModelScope.launch {
+                ksudIntegrityRepository.repair()
+                    .onSuccess { snapshot ->
+                        homeStateRepository.update { cur ->
+                            cur.copy(systemInfo = cur.systemInfo.copy(ksudIntegrity = snapshot))
+                        }
+                        mutableEvents.tryEmit(HomeUiEvent.Info(R.string.ksud_sync_success))
+                    }
+                    .onFailure {
+                        mutableEvents.tryEmit(HomeUiEvent.Error(it.message.orEmpty()))
+                    }
             }
         }
     }
@@ -266,7 +291,7 @@ class HomeViewModel(
 
     private fun completedJob(): Job = Job().apply { complete() }
 
-    private companion object {
+    companion object {
         const val PREF_CHECK_UPDATE = "check_update"
         const val PREF_CHECK_BETA_UPDATE = "check_beta_update"
         const val PREF_SIMPLE_MODE = "is_simple_mode"

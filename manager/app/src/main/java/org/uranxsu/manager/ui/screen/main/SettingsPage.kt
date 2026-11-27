@@ -37,6 +37,7 @@ import androidx.compose.material.icons.twotone.Extension
 import androidx.compose.material.icons.twotone.Fence
 import androidx.compose.material.icons.twotone.FolderDelete
 import androidx.compose.material.icons.twotone.FolderOff
+import androidx.compose.material.icons.twotone.HealthAndSafety
 import androidx.compose.material.icons.twotone.Info
 import androidx.compose.material.icons.twotone.Layers
 import androidx.compose.material.icons.twotone.Memory
@@ -46,6 +47,7 @@ import androidx.compose.material.icons.twotone.RemoveModerator
 import androidx.compose.material.icons.twotone.RestartAlt
 import androidx.compose.material.icons.twotone.Save
 import androidx.compose.material.icons.twotone.Science
+import androidx.compose.material.icons.twotone.ScreenshotMonitor
 import androidx.compose.material.icons.twotone.Security
 import androidx.compose.material.icons.twotone.Settings
 import androidx.compose.material.icons.twotone.Share
@@ -442,7 +444,7 @@ fun SettingsPage(bottomPadding: Dp) {
                             ) {
                                 SettingsSwitchWidget(
                                     icon = Icons.TwoTone.Science,
-                                    title = stringResource(R.string.settings_check_beta_update),
+                                    title = customText(CustomTextKey.SETTING_CHECK_BETA_UPDATE),
                                     description = stringResource(R.string.settings_check_beta_update_summary),
                                     checked = uiState.checkBetaUpdate,
                                     onCheckedChange = { enabled ->
@@ -459,7 +461,7 @@ fun SettingsPage(bottomPadding: Dp) {
                         item {
                             SettingsSwitchWidget(
                                 icon = Icons.TwoTone.Extension,
-                                title = stringResource(R.string.settings_check_module_update),
+                                title = customText(CustomTextKey.SETTING_CHECK_MODULE_UPDATE),
                                 description = stringResource(R.string.settings_check_module_update_summary),
                                 checked = uiState.checkModuleUpdate,
                                 onCheckedChange = { enabled ->
@@ -467,6 +469,20 @@ fun SettingsPage(bottomPadding: Dp) {
                                         SettingsUiAction.SetModuleUpdateCheck(
                                             enabled,
                                         ),
+                                    )
+                                },
+                            )
+                        }
+
+                        item(visible = homeState.systemStatus.isManager) {
+                            SettingsSwitchWidget(
+                                icon = Icons.TwoTone.RestartAlt,
+                                title = customText(CustomTextKey.SETTING_AUTO_UPDATE_KSUD),
+                                description = stringResource(R.string.settings_auto_update_ksud_summary),
+                                checked = uiState.autoUpdateKsud,
+                                onCheckedChange = { enabled ->
+                                    settingsViewModel.dispatch(
+                                        SettingsUiAction.SetAutoUpdateKsud(enabled),
                                     )
                                 },
                             )
@@ -567,7 +583,7 @@ fun SettingsPage(bottomPadding: Dp) {
                                     }
                                     SettingsJumpPageWidget(
                                         icon = Icons.TwoTone.Memory,
-                                        title = stringResource(R.string.mount_settings_open_nomount),
+                                        title = customText(CustomTextKey.TOOL_NOMOUNT),
                                         description = desc,
                                         onClick = {
                                             navigator.push(Route.NoMountManager)
@@ -633,6 +649,28 @@ fun SettingsPage(bottomPadding: Dp) {
                                 description = stringResource(R.string.builtin_zygisk_settings_summary),
                                 onClick = {
                                     navigator.push(Route.BuiltinZygisk)
+                                },
+                            )
+                        }
+
+                        item(visible = homeState.systemStatus.isFullFeatured) {
+                            SettingsJumpPageWidget(
+                                icon = Icons.TwoTone.ScreenshotMonitor,
+                                title = customText(CustomTextKey.TOOL_NOSHOT),
+                                description = stringResource(R.string.noshot_summary),
+                                onClick = {
+                                    navigator.push(Route.NoShot)
+                                },
+                            )
+                        }
+
+                        item {
+                            SettingsJumpPageWidget(
+                                icon = Icons.TwoTone.HealthAndSafety,
+                                title = customText(CustomTextKey.TOOL_SYSTEM_HEALTH),
+                                description = stringResource(R.string.system_health_summary),
+                                onClick = {
+                                    navigator.push(Route.SystemHealth)
                                 },
                             )
                         }
@@ -823,7 +861,7 @@ fun UninstallItem(
 
     SettingsChooseWidget(
         icon = Icons.TwoTone.Delete,
-        title = stringResource(id = R.string.settings_uninstall),
+        title = customText(CustomTextKey.TOOL_UNINSTALL),
         items = options.map { stringResource(it.title) },
         itemDescriptions = options.map {
             if (it.message != 0) stringResource(it.message) else null

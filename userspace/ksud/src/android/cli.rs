@@ -172,6 +172,9 @@ enum Commands {
     /// Manage UranXSU built-in mount engine (NoMount)
     Mount(mount::cli::MountArgs),
 
+    /// Manage UranXSU built-in NoShot FLAG_SECURE remover
+    Noshot(noshot::NoshotArgs),
+
     /// Manage UranXSU built-in Zygisk (BuiltZygisk / NyaZygisk)
     Zygisk {
         #[command(subcommand)]
@@ -660,6 +663,7 @@ pub fn run() -> Result<()> {
         Commands::AnyKernel3 { zip, slot } => anykernel3::flash(&zip, slot),
         Commands::Susfs(args) => crate::android::susfs::cli::run_main(args),
         Commands::Mount(args) => crate::android::mount::cli::run_main(args),
+        Commands::Noshot(args) => crate::android::noshot::run_main(args),
         Commands::Zygisk { command } => match command {
             ZygiskCommand::On => {
                 crate::android::builtin_zygisk::switch_to(

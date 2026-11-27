@@ -126,7 +126,9 @@ import org.uranxsu.manager.ui.theme.CardConfig
 import org.uranxsu.manager.ui.theme.ThemeConfig
 import org.uranxsu.manager.ui.theme.blurEffect
 import org.uranxsu.manager.ui.theme.blurSource
+import org.uranxsu.manager.ui.util.CustomTextKey
 import org.uranxsu.manager.ui.util.adaptiveScaffoldWindowInsets
+import org.uranxsu.manager.ui.util.customText
 import org.uranxsu.manager.ui.viewmodel.HomeUiAction
 import org.uranxsu.manager.ui.viewmodel.HomeUiState
 import org.uranxsu.manager.ui.viewmodel.HomeViewModel
@@ -502,9 +504,11 @@ fun ThemeSettingsScreen(
             item {
                 ThemePackageSettings(
                     state = settingsState,
+                    homeState = homeUiState,
+                    moduleState = moduleUiState,
                     settingsViewModel = settingsViewModel,
                     homeViewModel = homeViewModel,
-                    showBadge = homeUiState.showNavigationBarBadge,
+                    moduleViewModel = moduleViewModel,
                 )
             }
 
@@ -574,7 +578,7 @@ private fun AppearanceSettings(
     val themeConfig: ThemeConfig = koinInject()
     val cardConfig: CardConfig = koinInject()
     val paletteStyles = state.dynamicColorSpec.availablePaletteStyles()
-    SegmentedColumn(title = stringResource(R.string.appearance_settings)) {
+    SegmentedColumn(title = customText(CustomTextKey.SETTING_THEME_MODE)) {
         item {
             // 语言设置
             LanguageSetting(state = state, viewModel = viewModel)
@@ -584,7 +588,7 @@ private fun AppearanceSettings(
             // 主题模式
             SettingsChooseWidget(
                 icon = Icons.TwoTone.DarkMode,
-                title = stringResource(R.string.theme_mode),
+                title = customText(CustomTextKey.SETTING_THEME_MODE),
                 items = state.themeOptions.map { stringResource(it) },
                 selectedIndex = state.themeMode,
                 onSelectedIndexChange = { index ->
@@ -598,7 +602,7 @@ private fun AppearanceSettings(
             topContent = {
                 SettingsSwitchWidget(
                     icon = Icons.TwoTone.ColorLens,
-                    title = stringResource(R.string.dynamic_color_title),
+                    title = customText(CustomTextKey.SETTING_DYNAMIC_COLOR),
                     description = stringResource(R.string.dynamic_color_summary),
                     checked = state.useDynamicColor,
                     onCheckedChange = { enabled ->
@@ -705,7 +709,7 @@ private fun WallpaperEffectsSettings(
     val themeConfig: ThemeConfig = koinInject()
     val backgroundManager: BackgroundManager = koinInject()
 
-    SegmentedColumn(title = stringResource(R.string.wallpaper_section)) {
+    SegmentedColumn(title = customText(CustomTextKey.SETTING_WALLPAPER)) {
         expandableItem(
             expanded = state.isCustomBackgroundEnabled,
             topContent = {
@@ -833,7 +837,7 @@ private fun CustomizationSettings(
             // 简洁模式开关
             SettingsSwitchWidget(
                 icon = Icons.TwoTone.Brush,
-                title = stringResource(R.string.simple_mode),
+                title = customText(CustomTextKey.SETTING_SIMPLE_MODE),
                 description = stringResource(R.string.simple_mode_summary),
                 checked = homeUiState.isSimpleMode,
                 onCheckedChange = { enabled ->
@@ -846,7 +850,7 @@ private fun CustomizationSettings(
             // 显示更多模块信息
             SettingsSwitchWidget(
                 icon = Icons.TwoTone.Info,
-                title = stringResource(R.string.show_more_module_info),
+                title = customText(CustomTextKey.MODULE_SHOW_MORE_INFO),
                 description = stringResource(R.string.show_more_module_info_summary),
                 checked = moduleUiState.showMoreModuleInfo,
                 onCheckedChange = { enabled ->

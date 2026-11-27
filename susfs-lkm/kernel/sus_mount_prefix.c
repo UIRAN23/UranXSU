@@ -58,7 +58,7 @@ int sus_mount_prefix_count(void)
 	return READ_ONCE(n_mount_keep);
 }
 
-static bool sus_mount_prefix_match_impl(const char *s, bool match_data_root)
+bool sus_mount_prefix_match(const char *s)
 {
 	unsigned long flags;
 	bool hit = false;
@@ -70,32 +70,13 @@ static bool sus_mount_prefix_match_impl(const char *s, bool match_data_root)
 	for (i = 0; i < n_mount_keep; i++) {
 		size_t len = strlen(mount_keep[i]);
 
-		if (!len)
-			continue;
-		if (!strncmp(s, mount_keep[i], len)) {
-			hit = true;
-			break;
-		}
-		/* Bind mounts originating under /data/<subpath> expose /<subpath> as
-		 * dentry_path_raw(mnt->mnt_root) because /data is a separate superblock. */
-		if (match_data_root && len > 6 && !strncmp(mount_keep[i], "/data/", 6) &&
-		    !strncmp(s, mount_keep[i] + 5, len - 5)) {
+		if (len && !strncmp(s, mount_keep[i], len)) {
 			hit = true;
 			break;
 		}
 	}
 	spin_unlock_irqrestore(&mount_keep_lock, flags);
 	return hit;
-}
-
-bool sus_mount_prefix_match(const char *s)
-{
-	return sus_mount_prefix_match_impl(s, false);
-}
-
-bool sus_mount_prefix_match_root(const char *s)
-{
-	return sus_mount_prefix_match_impl(s, true);
 }
 
 const char *sus_mount_prefix_default(void)

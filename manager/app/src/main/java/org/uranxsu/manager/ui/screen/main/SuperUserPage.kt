@@ -98,6 +98,7 @@ import org.uranxsu.manager.ui.viewmodel.SuperUserViewModel
 private data class SuperUserMenuItem(
     val checked: Boolean = false,
     val titleRes: Int,
+    val titleText: String? = null,
     val onClick: () -> Unit,
     val closeOnClick: Boolean = true,
 )
@@ -220,12 +221,12 @@ fun SuperUserPage(bottomPadding: Dp) {
                     }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.TwoTone.Article,
-                            contentDescription = stringResource(R.string.sulog),
+                            contentDescription = customText(CustomTextKey.PAGE_LOG),
                         )
                     }
                 },
                 scrollBehavior = scrollBehavior,
-                searchBarPlaceHolderText = stringResource(R.string.search_apps),
+                searchBarPlaceHolderText = customText(CustomTextKey.SUPERUSER_SEARCH_PLACEHOLDER),
             )
         },
         containerColor = Color.Transparent,
@@ -407,16 +408,25 @@ private fun SuperUserDropdown(
     onBackupAllowlist: () -> Unit,
     onRestoreAllowlist: () -> Unit,
 ) {
+    val reverseOrderLabel = customText(CustomTextKey.SUPERUSER_REVERSE_ORDER)
+    val showSystemLabel = customText(CustomTextKey.SUPERUSER_SHOW_SYSTEM)
+    val backupAllowlistLabel = customText(CustomTextKey.SUPERUSER_BACKUP_ALLOWLIST)
+    val restoreAllowlistLabel = customText(CustomTextKey.SUPERUSER_RESTORE_ALLOWLIST)
     val menuItems = remember(
         uiState.showSystemApps,
         uiState.reverseOrder,
         onBackupAllowlist,
         onRestoreAllowlist,
+        reverseOrderLabel,
+        showSystemLabel,
+        backupAllowlistLabel,
+        restoreAllowlistLabel,
     ) {
         listOf(
             SuperUserMenuItem(
                 checked = uiState.reverseOrder,
                 titleRes = R.string.reverse_order,
+                titleText = reverseOrderLabel,
                 closeOnClick = false,
                 onClick = {
                     viewModel.dispatch(SuperUserUiAction.SetReverseOrder(!uiState.reverseOrder))
@@ -425,6 +435,7 @@ private fun SuperUserDropdown(
             SuperUserMenuItem(
                 checked = uiState.showSystemApps,
                 titleRes = R.string.show_system_apps,
+                titleText = showSystemLabel,
                 closeOnClick = false,
                 onClick = {
                     viewModel.dispatch(SuperUserUiAction.SetShowSystemApps(!uiState.showSystemApps))
@@ -432,10 +443,12 @@ private fun SuperUserDropdown(
             ),
             SuperUserMenuItem(
                 titleRes = R.string.backup_allowlist,
+                titleText = backupAllowlistLabel,
                 onClick = onBackupAllowlist,
             ),
             SuperUserMenuItem(
                 titleRes = R.string.restore_allowlist,
+                titleText = restoreAllowlistLabel,
                 onClick = onRestoreAllowlist,
             ),
         )
@@ -475,7 +488,7 @@ private fun SuperUserDropdown(
                         if (menuItem.closeOnClick) onDismissRequest()
                         menuItem.onClick()
                     },
-                    text = { Text(stringResource(menuItem.titleRes)) },
+                    text = { Text(menuItem.titleText ?: stringResource(menuItem.titleRes)) },
                     shapes = MenuDefaults.itemShape(
                         index = index,
                         count = menuItems.size,
@@ -548,7 +561,7 @@ private fun AppGroupItem(
                 }
                 if (appGroup.isRecentlyInstalled) {
                     LabelText(
-                        label = stringResource(R.string.recently_installed),
+                        label = customText(CustomTextKey.SUPERUSER_RECENTLY_INSTALLED),
                         containerColor = MaterialTheme.colorScheme.surfaceBright,
                     )
                 }

@@ -16,9 +16,11 @@ val LocalCustomTexts = compositionLocalOf<Map<String, String>> { emptyMap() }
 
 enum class CustomTextGroup(@param:StringRes val titleRes: Int) {
     HOME(R.string.custom_text_group_home),
-    PAGE_MAIN(R.string.custom_text_group_page_main),
-    PAGE_FEATURE(R.string.custom_text_group_page_feature),
+    NAVIGATION(R.string.custom_text_group_navigation),
+    MODULES(R.string.custom_text_group_modules),
+    SUPERUSER(R.string.custom_text_group_superuser),
     SETTINGS(R.string.custom_text_group_settings),
+    TOOLS(R.string.custom_text_group_tools),
 }
 
 enum class CustomTextKey(
@@ -32,7 +34,10 @@ enum class CustomTextKey(
     HOME_STATUS_WORKING("home.status_working", R.string.home_working, R.string.home_working, CustomTextGroup.HOME),
     HOME_STATUS_NOT_INSTALLED("home.status_not_installed", R.string.home_not_installed, R.string.home_not_installed, CustomTextGroup.HOME),
     HOME_STATUS_INSTALL_HINT("home.status_install_hint", R.string.home_click_to_install, R.string.home_click_to_install, CustomTextGroup.HOME),
+    HOME_STATUS_UNSUPPORTED("home.status_unsupported", R.string.home_unsupported, R.string.home_unsupported, CustomTextGroup.HOME),
     HOME_TAG_SAFEMODE("home.tag_safemode", R.string.safe_mode, R.string.safe_mode, CustomTextGroup.HOME),
+    HOME_STATUS_KSUD_SYNC("home.status_ksud_sync", R.string.home_ksud_mismatch_warning, R.string.home_ksud_mismatch_warning, CustomTextGroup.HOME),
+    HOME_UPDATE_BUTTON("home.update_button", R.string.module_update, R.string.module_update, CustomTextGroup.HOME),
     HOME_INFO_KERNEL("home.info_kernel", R.string.home_kernel, R.string.home_kernel, CustomTextGroup.HOME),
     HOME_INFO_ANDROID("home.info_android", R.string.home_android_version, R.string.home_android_version, CustomTextGroup.HOME),
     HOME_INFO_KERNEL_FULL("home.info_kernel_full", R.string.home_kernel_version, R.string.home_kernel_version, CustomTextGroup.HOME),
@@ -44,32 +49,54 @@ enum class CustomTextKey(
     HOME_INFO_ZYGISK("home.info_zygisk", R.string.home_zygisk_implement, R.string.home_zygisk_implement, CustomTextGroup.HOME),
     HOME_INFO_METAMODULE("home.info_metamodule", R.string.home_meta_module_implement, R.string.home_meta_module_implement, CustomTextGroup.HOME),
     HOME_INFO_SUSFS("home.info_susfs", R.string.home_susfs_version, R.string.home_susfs_version, CustomTextGroup.HOME),
-    HOME_STATUS_UNSUPPORTED("home.status_unsupported", R.string.home_unsupported, R.string.home_unsupported, CustomTextGroup.HOME),
+    HOME_INFO_KSUD("home.info_ksud", R.string.home_ksud_daemon, R.string.home_ksud_daemon, CustomTextGroup.HOME),
+    HOME_INFO_MULTI_MANAGER("home.info_multi_manager", R.string.multi_manager_list, R.string.multi_manager_list, CustomTextGroup.HOME),
     HOME_SUPPORT_TITLE("home.support_title", R.string.home_support_title, R.string.home_support_title, CustomTextGroup.HOME),
     HOME_LEARN_TITLE("home.learn_title", R.string.home_learn_kernelsu, R.string.home_learn_kernelsu, CustomTextGroup.HOME),
 
-    // Main navigation & page headers
-    PAGE_HOME("page.home", R.string.home, R.string.home, CustomTextGroup.PAGE_MAIN),
-    PAGE_SUPERUSER("page.superuser", R.string.superuser, R.string.superuser, CustomTextGroup.PAGE_MAIN),
-    PAGE_MODULES("page.modules", R.string.module, R.string.module, CustomTextGroup.PAGE_MAIN),
-    PAGE_SETTINGS("page.settings", R.string.settings, R.string.settings, CustomTextGroup.PAGE_MAIN),
-    PAGE_LOG("page.log", R.string.sulog, R.string.sulog, CustomTextGroup.PAGE_MAIN),
+    // Navigation & reboot
+    PAGE_HOME("page.home", R.string.home, R.string.home, CustomTextGroup.NAVIGATION),
+    PAGE_SUPERUSER("page.superuser", R.string.superuser, R.string.superuser, CustomTextGroup.NAVIGATION),
+    PAGE_MODULES("page.modules", R.string.module, R.string.module, CustomTextGroup.NAVIGATION),
+    PAGE_SETTINGS("page.settings", R.string.settings, R.string.settings, CustomTextGroup.NAVIGATION),
+    PAGE_LOG("page.log", R.string.sulog, R.string.sulog, CustomTextGroup.NAVIGATION),
+    COMMON_REBOOT("common.reboot", R.string.reboot, R.string.reboot, CustomTextGroup.NAVIGATION),
+    COMMON_REBOOT_SOFT("common.reboot_soft", R.string.reboot_soft, R.string.reboot_soft, CustomTextGroup.NAVIGATION),
+    COMMON_REBOOT_USERSPACE("common.reboot_userspace", R.string.reboot_userspace, R.string.reboot_userspace, CustomTextGroup.NAVIGATION),
+    COMMON_REBOOT_RECOVERY("common.reboot_recovery", R.string.reboot_recovery, R.string.reboot_recovery, CustomTextGroup.NAVIGATION),
+    COMMON_REBOOT_BOOTLOADER("common.reboot_bootloader", R.string.reboot_bootloader, R.string.reboot_bootloader, CustomTextGroup.NAVIGATION),
+    COMMON_REBOOT_DOWNLOAD("common.reboot_download", R.string.reboot_download, R.string.reboot_download, CustomTextGroup.NAVIGATION),
+    COMMON_REBOOT_EDL("common.reboot_edl", R.string.reboot_edl, R.string.reboot_edl, CustomTextGroup.NAVIGATION),
 
-    // Feature pages
-    PAGE_APPEARANCE("page.appearance", R.string.theme_settings, R.string.theme_settings, CustomTextGroup.PAGE_FEATURE),
-    PAGE_CUSTOM_TEXTS("page.custom_texts", R.string.custom_texts_title, R.string.custom_texts_title, CustomTextGroup.PAGE_FEATURE),
-    PAGE_TEMPLATE("page.template", R.string.settings_profile_template, R.string.settings_profile_template, CustomTextGroup.PAGE_FEATURE),
-    PAGE_ABOUT("page.about", R.string.about, R.string.about, CustomTextGroup.PAGE_FEATURE),
-    PAGE_UMOUNT("page.umount", R.string.umount_path_manager, R.string.umount_path_manager, CustomTextGroup.PAGE_FEATURE),
-    PAGE_TOOLS("page.tools", R.string.tools, R.string.tools, CustomTextGroup.PAGE_FEATURE),
-    PAGE_DYNAMIC_MANAGERS("page.dynamic_managers", R.string.dynamic_manager_title, R.string.dynamic_manager_title, CustomTextGroup.PAGE_FEATURE),
-    EXTENSION_SUSFS("extension.susfs", R.string.susfs_config_setting_title, R.string.susfs_config_setting_title, CustomTextGroup.PAGE_FEATURE),
-    PAGE_MOUNT_ENGINE("page.mount_engine", R.string.mount_engine_title, R.string.mount_engine_title, CustomTextGroup.PAGE_FEATURE),
-    ZYGISK_SETTINGS_TITLE("zygisk.settings_title", R.string.builtin_zygisk_title, R.string.builtin_zygisk_title, CustomTextGroup.PAGE_FEATURE),
-    MODULE_EMPTY("module.empty", R.string.module_empty, R.string.module_empty, CustomTextGroup.PAGE_FEATURE),
-    SUPERUSER_EMPTY("superuser.empty", R.string.no_apps_found, R.string.no_apps_found, CustomTextGroup.PAGE_FEATURE),
+    // Modules
+    MODULE_EMPTY("module.empty", R.string.module_empty, R.string.module_empty, CustomTextGroup.MODULES),
+    MODULE_SEARCH_PLACEHOLDER("module.search_placeholder", R.string.search_modules, R.string.search_modules, CustomTextGroup.MODULES),
+    MODULE_REPO_TITLE("module.repo_title", R.string.module_repo, R.string.module_repo, CustomTextGroup.MODULES),
+    MODULE_SORT_ACTION("module.sort_action", R.string.module_sort_action_first, R.string.module_sort_action_first, CustomTextGroup.MODULES),
+    MODULE_SORT_ENABLED("module.sort_enabled", R.string.module_sort_enabled_first, R.string.module_sort_enabled_first, CustomTextGroup.MODULES),
+    MODULE_VERSION_LABEL("module.version_label", R.string.module_version, R.string.module_version, CustomTextGroup.MODULES),
+    MODULE_AUTHOR_LABEL("module.author_label", R.string.module_author, R.string.module_author, CustomTextGroup.MODULES),
+    MODULE_UPDATE_JSON("module.update_json", R.string.module_update_json, R.string.module_update_json, CustomTextGroup.MODULES),
+    MODULE_SHOW_MORE_INFO("module.show_more_info", R.string.show_more_module_info, R.string.show_more_module_info, CustomTextGroup.MODULES),
+    MODULE_BANNER_TITLE("module.banner_title", R.string.module_banner_title, R.string.module_banner_title, CustomTextGroup.MODULES),
 
-    // Settings items
+    // SuperUser
+    SUPERUSER_EMPTY("superuser.empty", R.string.no_apps_found, R.string.no_apps_found, CustomTextGroup.SUPERUSER),
+    SUPERUSER_SEARCH_PLACEHOLDER("superuser.search_placeholder", R.string.search_apps, R.string.search_apps, CustomTextGroup.SUPERUSER),
+    SUPERUSER_REVERSE_ORDER("superuser.reverse_order", R.string.reverse_order, R.string.reverse_order, CustomTextGroup.SUPERUSER),
+    SUPERUSER_SHOW_SYSTEM("superuser.show_system", R.string.show_system_apps, R.string.show_system_apps, CustomTextGroup.SUPERUSER),
+    SUPERUSER_BACKUP_ALLOWLIST("superuser.backup_allowlist", R.string.backup_allowlist, R.string.backup_allowlist, CustomTextGroup.SUPERUSER),
+    SUPERUSER_RESTORE_ALLOWLIST("superuser.restore_allowlist", R.string.restore_allowlist, R.string.restore_allowlist, CustomTextGroup.SUPERUSER),
+    SUPERUSER_RECENTLY_INSTALLED("superuser.recently_installed", R.string.recently_installed, R.string.recently_installed, CustomTextGroup.SUPERUSER),
+    SUPERUSER_LAUNCH_APP("superuser.launch_app", R.string.launch_app, R.string.launch_app, CustomTextGroup.SUPERUSER),
+    SUPERUSER_FORCE_STOP("superuser.force_stop", R.string.force_stop_app, R.string.force_stop_app, CustomTextGroup.SUPERUSER),
+    SUPERUSER_UMOUNT_MODULES("superuser.umount_modules", R.string.profile_umount_modules, R.string.profile_umount_modules, CustomTextGroup.SUPERUSER),
+
+    // Settings
+    PAGE_APPEARANCE("page.appearance", R.string.theme_settings, R.string.theme_settings, CustomTextGroup.SETTINGS),
+    PAGE_CUSTOM_TEXTS("page.custom_texts", R.string.custom_texts_title, R.string.custom_texts_title, CustomTextGroup.SETTINGS),
+    PAGE_TEMPLATE("page.template", R.string.settings_profile_template, R.string.settings_profile_template, CustomTextGroup.SETTINGS),
+    PAGE_ABOUT("page.about", R.string.about, R.string.about, CustomTextGroup.SETTINGS),
     SETTING_SUCOMPAT("settings.sucompat", R.string.settings_sucompat, R.string.settings_sucompat, CustomTextGroup.SETTINGS),
     SETTING_KERNEL_UMOUNT("settings.kernel_umount", R.string.settings_kernel_umount, R.string.settings_kernel_umount, CustomTextGroup.SETTINGS),
     SETTING_SELINUX_HIDE("settings.selinux_hide", R.string.settings_selinux_hide, R.string.settings_selinux_hide, CustomTextGroup.SETTINGS),
@@ -78,10 +105,29 @@ enum class CustomTextKey(
     SETTING_SHELL_SU("settings.shell_su", R.string.settings_shell_su_adb_only, R.string.settings_shell_su_adb_only, CustomTextGroup.SETTINGS),
     SETTING_SOFT_REBOOT("settings.soft_reboot", R.string.settings_soft_reboot, R.string.settings_soft_reboot, CustomTextGroup.SETTINGS),
     SETTING_UMOUNT_MODULES_DEFAULT("settings.umount_modules_default", R.string.settings_umount_modules_default, R.string.settings_umount_modules_default, CustomTextGroup.SETTINGS),
-    SETTING_SEND_LOG("settings.send_log", R.string.send_log, R.string.send_log, CustomTextGroup.SETTINGS),
-    COMMON_REBOOT("common.reboot", R.string.reboot, R.string.reboot, CustomTextGroup.SETTINGS),
-    COMMON_REBOOT_RECOVERY("common.reboot_recovery", R.string.reboot_recovery, R.string.reboot_recovery, CustomTextGroup.SETTINGS),
-    COMMON_REBOOT_BOOTLOADER("common.reboot_bootloader", R.string.reboot_bootloader, R.string.reboot_bootloader, CustomTextGroup.SETTINGS),
+    SETTING_AUTO_UPDATE_KSUD("settings.auto_update_ksud", R.string.settings_auto_update_ksud, R.string.settings_auto_update_ksud, CustomTextGroup.SETTINGS),
+    SETTING_CHECK_BETA_UPDATE("settings.check_beta_update", R.string.settings_check_beta_update, R.string.settings_check_beta_update, CustomTextGroup.SETTINGS),
+    SETTING_CHECK_MODULE_UPDATE("settings.check_module_update", R.string.settings_check_module_update, R.string.settings_check_module_update, CustomTextGroup.SETTINGS),
+    SETTING_THEME_MODE("settings.theme_mode", R.string.theme_mode, R.string.theme_mode, CustomTextGroup.SETTINGS),
+    SETTING_DYNAMIC_COLOR("settings.dynamic_color", R.string.dynamic_color_title, R.string.dynamic_color_title, CustomTextGroup.SETTINGS),
+    SETTING_WALLPAPER("settings.wallpaper", R.string.wallpaper_section, R.string.wallpaper_section, CustomTextGroup.SETTINGS),
+    SETTING_APP_ICON("settings.app_icon", R.string.app_icon_section, R.string.app_icon_section, CustomTextGroup.SETTINGS),
+    SETTING_THEME_PACKAGES("settings.theme_packages", R.string.theme_package_section, R.string.theme_package_section, CustomTextGroup.SETTINGS),
+    SETTING_SIMPLE_MODE("settings.simple_mode", R.string.simple_mode, R.string.simple_mode, CustomTextGroup.SETTINGS),
+
+    // Tools
+    PAGE_TOOLS("page.tools", R.string.tools, R.string.tools, CustomTextGroup.TOOLS),
+    SETTING_SEND_LOG("settings.send_log", R.string.send_log, R.string.send_log, CustomTextGroup.TOOLS),
+    EXTENSION_SUSFS("extension.susfs", R.string.susfs_config_setting_title, R.string.susfs_config_setting_title, CustomTextGroup.TOOLS),
+    PAGE_MOUNT_ENGINE("page.mount_engine", R.string.mount_engine_title, R.string.mount_engine_title, CustomTextGroup.TOOLS),
+    TOOL_NOMOUNT("tool.nomount", R.string.nomount_manager_title, R.string.nomount_manager_title, CustomTextGroup.TOOLS),
+    ZYGISK_SETTINGS_TITLE("zygisk.settings_title", R.string.builtin_zygisk_title, R.string.builtin_zygisk_title, CustomTextGroup.TOOLS),
+    PAGE_DYNAMIC_MANAGERS("page.dynamic_managers", R.string.dynamic_manager_title, R.string.dynamic_manager_title, CustomTextGroup.TOOLS),
+    PAGE_UMOUNT("page.umount", R.string.umount_path_manager, R.string.umount_path_manager, CustomTextGroup.TOOLS),
+    TOOL_NOSHOT("tool.noshot", R.string.noshot_title, R.string.noshot_title, CustomTextGroup.TOOLS),
+    TOOL_SYSTEM_HEALTH("tool.system_health", R.string.system_health_title, R.string.system_health_title, CustomTextGroup.TOOLS),
+    TOOL_CONFIG_BACKUP("tool.config_backup", R.string.backup_section_title, R.string.backup_section_title, CustomTextGroup.TOOLS),
+    TOOL_UNINSTALL("tool.uninstall", R.string.settings_uninstall, R.string.settings_uninstall, CustomTextGroup.TOOLS),
     ;
 
     companion object {
@@ -130,6 +176,14 @@ class CustomTextConfig(
 
     fun reset(key: String) {
         saveMap(customTexts - key)
+    }
+
+    fun resetGroup(group: CustomTextGroup) {
+        val keysToRemove = CustomTextKey.entries
+            .filter { it.group == group }
+            .map { it.key }
+            .toSet()
+        saveMap(customTexts - keysToRemove)
     }
 
     fun resetAll() {

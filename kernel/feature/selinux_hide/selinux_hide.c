@@ -76,7 +76,7 @@ static int ksu_selinux_hide_enable()
 {
     pr_info("selinux_hide: init selinux hide\n");
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
-    if (!backup_sepolicy) {
+    if (!smp_load_acquire(&backup_sepolicy)) {
         pr_err("no backup sepolicy available, please save feature and reboot to retry!\n");
         return -EAGAIN;
     }
@@ -203,16 +203,22 @@ void __exit ksu_selinux_hide_exit()
 
 void ksu_selinux_hide_drop_backup_if_unused()
 {
-    mutex_lock(&selinux_hide_mutex);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
-    if (!ksu_selinux_hide_backup_in_use() && backup_sepolicy) {
+    struct selinux_policy *backup = NULL;
+
+    mutex_lock(&selinux_hide_mutex);
+    if (!ksu_selinux_hide_backup_in_use())
+        backup = ksu_detach_backup_sepolicy();
+    mutex_unlock(&selinux_hide_mutex);
+
+    if (backup) {
         pr_info("selinux_hide is not enabled - drop backup_sepolicy\n");
-        sidtab_destroy(backup_sepolicy->sidtab);
-        kfree(backup_sepolicy->sidtab);
-        ksu_destroy_sepolicy(backup_sepolicy);
-        backup_sepolicy = NULL;
+        sidtab_destroy(backup->sidtab);
+        kfree(backup->sidtab);
+        ksu_destroy_sepolicy(backup);
     }
 #elif defined(KSU_COMPAT_USE_SELINUX_STATE)
+    mutex_lock(&selinux_hide_mutex);
     if (!ksu_selinux_hide_backup_in_use() && backup_policydb && backup_sidtab) {
         pr_info("selinux_hide is not enabled - drop backup_policydb\n");
         sidtab_destroy(backup_sidtab);
@@ -222,7 +228,9 @@ void ksu_selinux_hide_drop_backup_if_unused()
         backup_policydb = NULL;
         backup_sidtab = NULL;
     }
+    mutex_unlock(&selinux_hide_mutex);
 #else
+    mutex_lock(&selinux_hide_mutex);
     if (!ksu_selinux_hide_backup_in_use() && backup_policydb && backup_sidtab) {
         sidtab_destroy(backup_sidtab);
         kfree(backup_sidtab);
@@ -231,8 +239,8 @@ void ksu_selinux_hide_drop_backup_if_unused()
         backup_policydb = NULL;
         backup_sidtab = NULL;
     }
-#endif
     mutex_unlock(&selinux_hide_mutex);
+#endif
 }
 
 // for susfs xN

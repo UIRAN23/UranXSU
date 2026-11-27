@@ -12,6 +12,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import org.uranxsu.manager.R
 import org.uranxsu.manager.domain.model.AppProfile
 import org.uranxsu.manager.ui.component.settings.SettingsSwitchWidget
+import org.uranxsu.manager.ui.util.CustomTextKey
+import org.uranxsu.manager.ui.util.customText
 
 @Composable
 fun AppProfileConfig(
@@ -22,7 +24,7 @@ fun AppProfileConfig(
 ) {
     SettingsSwitchWidget(
         icon = Icons.TwoTone.FolderDelete,
-        title = stringResource(R.string.profile_umount_modules),
+        title = customText(CustomTextKey.SUPERUSER_UMOUNT_MODULES),
         description = stringResource(R.string.profile_umount_modules_summary),
         checked = if (enabled) {
             profile.umountModules

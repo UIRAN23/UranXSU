@@ -14,7 +14,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -102,6 +101,8 @@ import org.uranxsu.manager.ui.util.ThemePackageStorage
 import org.uranxsu.manager.ui.util.customText
 import org.uranxsu.manager.ui.viewmodel.HomeUiState
 import org.uranxsu.manager.ui.viewmodel.HomeViewModel
+import org.uranxsu.manager.ui.viewmodel.ModuleUiState
+import org.uranxsu.manager.ui.viewmodel.ModuleViewModel
 import org.uranxsu.manager.ui.viewmodel.SettingsUiAction
 import org.uranxsu.manager.ui.viewmodel.SettingsUiState
 import org.uranxsu.manager.ui.viewmodel.SettingsViewModel
@@ -113,7 +114,7 @@ fun AppIconSettings(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
 ) {
-    SegmentedColumn(title = stringResource(R.string.app_icon_section)) {
+    SegmentedColumn(title = customText(CustomTextKey.SETTING_APP_ICON)) {
         item {
             SettingsChooseWidget(
                 icon = Icons.TwoTone.Android,
@@ -622,9 +623,11 @@ private fun HomeStatusCardLivePreview(
 @Composable
 fun ThemePackageSettings(
     state: SettingsUiState,
+    homeState: HomeUiState,
+    moduleState: ModuleUiState,
     settingsViewModel: SettingsViewModel,
     homeViewModel: HomeViewModel,
-    showBadge: Boolean,
+    moduleViewModel: ModuleViewModel,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -633,7 +636,6 @@ fun ThemePackageSettings(
     val backgroundManager: BackgroundManager = koinInject()
     val home: HomeCustomizationConfig = koinInject()
     val customTexts: CustomTextConfig = koinInject()
-    val isDark = isSystemInDarkTheme()
     val importOk = stringResource(R.string.theme_import_success)
     val importFail = stringResource(R.string.theme_import_failed)
     val exportOk = stringResource(R.string.theme_export_success)
@@ -672,18 +674,18 @@ fun ThemePackageSettings(
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val (data, bg, cardBg) = ThemePackageApplier.buildExportPackage(
+            val payload = ThemePackageApplier.buildExportPackage(
                 context = context,
                 themeConfig = themeConfig,
                 cardConfig = cardConfig,
+                backgroundManager = backgroundManager,
                 homeCustomization = home,
                 customTextConfig = customTexts,
-                themeMode = state.themeMode,
-                showNavigationBarBadge = showBadge,
-                enableSwipeDismiss = state.enableSwipeDismiss,
-                pagerInterceptionMode = state.pagerInterceptionMode,
+                settingsState = state,
+                homeState = homeState,
+                moduleState = moduleState,
             )
-            val ok = ThemePackageStorage.export(context, uri, data, bg, cardBg).isSuccess
+            val ok = ThemePackageStorage.export(context, uri, payload).isSuccess
             Toast.makeText(context, if (ok) exportOk else exportFail, Toast.LENGTH_SHORT).show()
         }
     }
@@ -691,7 +693,6 @@ fun ThemePackageSettings(
     pendingImport?.let { imported ->
         ThemeImportOptionsDialog(
             imported = imported,
-            useDarkVariant = isDark,
             busy = isApplyingImport,
             onDismiss = {
                 if (!isApplyingImport) {
@@ -708,10 +709,10 @@ fun ThemePackageSettings(
                             ThemePackageApplier.apply(
                                 context = context,
                                 imported = imported,
-                                useDarkVariant = isDark,
                                 options = options,
                                 settingsViewModel = settingsViewModel,
                                 homeViewModel = homeViewModel,
+                                moduleViewModel = moduleViewModel,
                                 backgroundManager = backgroundManager,
                                 homeCustomization = home,
                                 customTextConfig = customTexts,
@@ -731,7 +732,7 @@ fun ThemePackageSettings(
         )
     }
 
-    SegmentedColumn(title = stringResource(R.string.theme_package_section)) {
+    SegmentedColumn(title = customText(CustomTextKey.SETTING_THEME_PACKAGES)) {
         item {
             SettingsJumpPageWidget(
                 icon = Icons.TwoTone.Download,
@@ -764,61 +765,60 @@ private enum class ThemeImportPart {
 @Composable
 private fun ThemeImportOptionsDialog(
     imported: ImportedTheme,
-    useDarkVariant: Boolean,
     busy: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (ThemeApplyOptions) -> Unit,
 ) {
-    val variantData = if (imported.isAdaptive) {
-        if (useDarkVariant) imported.dark?.data else imported.light?.data
-    } else {
-        null
-    }
     val data = imported.data
 
-    val availableParts = remember(imported, useDarkVariant) {
+    val availableParts = remember(imported) {
         buildList {
-            if (variantData?.themeMode != null || data.themeMode != null ||
-                variantData?.keyColor != null || data.keyColor != null ||
-                variantData?.colorStyle != null || data.colorStyle != null ||
-                variantData?.colorSpec != null || data.colorSpec != null
+            if (data.themeMode != null ||
+                data.useDynamicColor != null ||
+                data.seedColor != null ||
+                data.dynamicColorSpec != null ||
+                data.dynamicPaletteStyle != null ||
+                data.isUseBackgroundSeedColor != null ||
+                data.isHighContrastMode != null
             ) {
                 add(ThemeImportPart.COLORS)
             }
-            val bgPath = if (imported.isAdaptive) {
-                (if (useDarkVariant) imported.dark?.backgroundPath else imported.light?.backgroundPath)
-                    ?: imported.backgroundPath
-            } else {
-                imported.backgroundPath
-            }
-            if ((bgPath != null && File(bgPath).isFile) || (variantData?.hasBackground ?: data.hasBackground) == false) {
+            if (imported.backgroundFile != null || data.hasBackground == false) {
                 add(ThemeImportPart.BACKGROUND)
             }
-            val cardBgPath = if (imported.isAdaptive) {
-                (if (useDarkVariant) imported.dark?.cardBackgroundPath else imported.light?.cardBackgroundPath)
-                    ?: imported.cardBackgroundPath
-            } else {
-                imported.cardBackgroundPath
-            }
-            if ((cardBgPath != null && File(cardBgPath).isFile) || (variantData?.hasCardBackground ?: data.hasCardBackground) == false) {
+            if (imported.cardBackgroundFile != null || data.hasCardBackground == false) {
                 add(ThemeImportPart.CARD_BACKGROUND)
             }
-            if (variantData?.cardBackgroundAlphaPercent != null || data.cardBackgroundAlphaPercent != null ||
-                variantData?.customBackgroundScrimPercent != null || data.customBackgroundScrimPercent != null ||
-                variantData?.enableBlur != null || data.enableBlur != null
+            if (data.cardAlpha != null ||
+                data.backgroundDim != null ||
+                data.isEnableBlur != null ||
+                data.isEnableBlurExp != null ||
+                data.isFlashCardBackgroundEnabled != null ||
+                data.statusCardScrim != null
             ) {
                 add(ThemeImportPart.EFFECTS)
             }
-            if (variantData?.enableFloatingBottomBar != null || data.enableFloatingBottomBar != null ||
-                variantData?.enableNavigationBadge != null || data.enableNavigationBadge != null ||
-                variantData?.enableSwipeDismiss != null || data.enableSwipeDismiss != null ||
-                variantData?.pagerInterceptionMode != null || data.pagerInterceptionMode != null ||
-                variantData?.hideHomeCardStatusText != null || data.hideHomeCardStatusText != null ||
-                variantData?.hideHomeCardDecoration != null || data.hideHomeCardDecoration != null
+            if (data.bottomBarStyle != null ||
+                data.showNavigationBarBadge != null ||
+                data.showHomeCardIcons != null ||
+                data.isSimpleMode != null ||
+                data.showMoreModuleInfo != null ||
+                data.useBuiltinMonoFont != null ||
+                data.predictiveBackAnimation != null ||
+                data.predictiveBackExitDirection != null ||
+                data.enableSwipeDismiss != null ||
+                data.pagerInterceptionMode != null ||
+                data.useAltIcon != null ||
+                data.statusCardHeight != null ||
+                data.hideStatusCardText != null ||
+                data.hideStatusCardDecoration != null ||
+                data.showDonateCard != null ||
+                data.showLearnMoreCard != null ||
+                data.enableModuleBanner != null
             ) {
                 add(ThemeImportPart.LAYOUT)
             }
-            if (!data.customTexts.isNullOrEmpty() || !data.customHomeTitle.isNullOrBlank()) {
+            if (!data.customTexts.isNullOrEmpty()) {
                 add(ThemeImportPart.TEXTS)
             }
         }.ifEmpty { ThemeImportPart.entries }
@@ -837,14 +837,6 @@ private fun ThemeImportOptionsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                if (imported.isAdaptive) {
-                    Text(
-                        text = stringResource(R.string.theme_import_adaptive_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 6.dp),
-                    )
-                }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -913,7 +905,7 @@ private fun ThemeImportOptionsDialog(
                             applyCardBackground = ThemeImportPart.CARD_BACKGROUND in selected,
                             applyEffects = ThemeImportPart.EFFECTS in selected,
                             applyCustomTexts = ThemeImportPart.TEXTS in selected,
-                            applyHomeLayout = ThemeImportPart.LAYOUT in selected,
+                            applyLayout = ThemeImportPart.LAYOUT in selected,
                         ),
                     )
                 },

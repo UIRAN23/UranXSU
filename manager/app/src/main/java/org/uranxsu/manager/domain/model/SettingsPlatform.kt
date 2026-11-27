@@ -22,6 +22,7 @@ data class SettingsPlatformSnapshot(
     val checkManagerUpdate: Boolean = true,
     val checkBetaUpdate: Boolean = true,
     val checkModuleUpdate: Boolean = true,
+    val autoUpdateKsud: Boolean = true,
     val autoJailbreakEnabled: Boolean = false,
     val useBuiltinMonoFont: Boolean = false,
     val useSoftReboot: Boolean = false,
@@ -81,6 +82,7 @@ sealed interface PlatformSetting {
     data class ManagerUpdateCheck(val enabled: Boolean) : PlatformSetting
     data class BetaUpdateCheck(val enabled: Boolean) : PlatformSetting
     data class ModuleUpdateCheck(val enabled: Boolean) : PlatformSetting
+    data class AutoUpdateKsud(val enabled: Boolean) : PlatformSetting
     data class Locale(val tag: String) : PlatformSetting
     data class AutoJailbreak(val enabled: Boolean) : PlatformSetting
     data class AdbRoot(val enabled: Boolean) : PlatformSetting

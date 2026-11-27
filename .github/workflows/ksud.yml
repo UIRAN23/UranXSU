@@ -49,6 +49,7 @@ jobs:
           if ls x86_64-android*-nomount-lkm/*_nomount.ko >/dev/null 2>&1; then
             cp x86_64-android*-nomount-lkm/*_nomount.ko ./userspace/ksud/bin/x86_64/
           fi
+          find ./userspace/ksud/bin -type f -name '*.ko' -print0 | xargs -0 -r -P"$(nproc)" xz -9e --check=crc32
 
       - name: Prepare auxiliary binaries
         if: ${{ inputs.pack_lkm }}
@@ -69,6 +70,20 @@ jobs:
             cp aux-tools-x86_64/nm ./userspace/ksud/bin/x86_64/nm
             chmod 0755 ./userspace/ksud/bin/x86_64/nm
           fi
+          for f in noshot_64.so noshot_32.so; do
+            if [ -f "aux-tools-aarch64/$f" ]; then
+              cp "aux-tools-aarch64/$f" "./userspace/ksud/bin/aarch64/$f"
+              chmod 0644 "./userspace/ksud/bin/aarch64/$f"
+            fi
+            if [ -f "aux-tools-arm/$f" ]; then
+              cp "aux-tools-arm/$f" "./userspace/ksud/bin/arm/$f"
+              chmod 0644 "./userspace/ksud/bin/arm/$f"
+            fi
+            if [ -f "aux-tools-x86_64/$f" ]; then
+              cp "aux-tools-x86_64/$f" "./userspace/ksud/bin/x86_64/$f"
+              chmod 0644 "./userspace/ksud/bin/x86_64/$f"
+            fi
+          done
 
       - name: Prepare ksuinit
         if: ${{ inputs.pack_ksuinit }}

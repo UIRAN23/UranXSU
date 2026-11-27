@@ -70,9 +70,11 @@ bool is_selinux_hide_enabled();
 
 bool get_managers_list(struct ksu_get_managers_cmd **out_cmd);
 bool get_allow_list(struct ksu_new_get_allow_list_cmd *);
+bool ksu_grant_root(void);
 
 // Legacy Compatible
 struct ksu_version_info legacy_get_info();
+bool legacy_grant_root(void);
 
 struct ksu_version_info {
     int32_t version;

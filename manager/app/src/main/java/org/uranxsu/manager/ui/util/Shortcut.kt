@@ -4,6 +4,7 @@ import android.app.AppOpsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -45,6 +46,22 @@ class Shortcut(
             .build()
     }
 
+    private fun enabledLauncherComponent(context: Context): ComponentName {
+        val pm = context.packageManager
+        val mainActivity = ComponentName(context, MainActivity::class.java.name)
+        val mainActivityAlias = ComponentName(context, "${MainActivity::class.java.name}Alias")
+        val useAltIcon = when {
+            pm.getComponentEnabledSetting(mainActivityAlias) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> true
+
+            pm.getComponentEnabledSetting(mainActivity) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED -> false
+
+            else -> settings.getBoolean("use_alt_icon", false)
+        }
+        return if (useAltIcon) mainActivityAlias else mainActivity
+    }
+
     fun createModuleActionShortcut(
         context: Context,
         moduleId: String,
@@ -52,13 +69,9 @@ class Shortcut(
         iconUri: String?,
         intentToken: String,
     ) {
-        val usingAltIcon = settings.getBoolean("use_alt_icon", false)
-        val mainActivity = ComponentName(context, MainActivity::class.java.name)
-        val mainActivityAlias = ComponentName(context, "${MainActivity::class.java.name}Alias")
-
         val shortcutId = "module_action_$moduleId"
         val shortcutIntent = Intent().apply {
-            component = if (usingAltIcon) mainActivityAlias else mainActivity
+            component = enabledLauncherComponent(context)
             action = Intent.ACTION_VIEW
             data = buildShortcutUri(moduleId, ShortcutType.Action, intentToken)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -82,7 +95,8 @@ class Shortcut(
         intentToken: String,
     ) {
         val shortcutId = "module_webui_$moduleId"
-        val shortcutIntent = Intent(context, MainActivity::class.java).apply {
+        val shortcutIntent = Intent().apply {
+            component = enabledLauncherComponent(context)
             action = Intent.ACTION_VIEW
             data = buildShortcutUri(moduleId, ShortcutType.WebUI, intentToken)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)

@@ -88,8 +88,10 @@ import org.uranxsu.manager.ui.theme.blurEffect
 import org.uranxsu.manager.ui.theme.blurSource
 import org.uranxsu.manager.ui.theme.renderBackgroundBlur
 import org.uranxsu.manager.ui.util.ActivityResumeEffect
+import org.uranxsu.manager.ui.util.CustomTextKey
 import org.uranxsu.manager.ui.util.LocalSnackbarHost
 import org.uranxsu.manager.ui.util.adaptiveScaffoldWindowInsets
+import org.uranxsu.manager.ui.util.customText
 import org.uranxsu.manager.ui.util.showReplacingSnackbar
 import org.uranxsu.manager.ui.viewmodel.AppProfileUiAction
 import org.uranxsu.manager.ui.viewmodel.AppProfileUiEvent
@@ -290,8 +292,8 @@ private fun AppProfileInner(
                     },
                     choice = -1,
                     data = listOf(
-                        stringResource(id = R.string.launch_app),
-                        stringResource(id = R.string.force_stop_app),
+                        customText(CustomTextKey.SUPERUSER_LAUNCH_APP),
+                        customText(CustomTextKey.SUPERUSER_FORCE_STOP),
                         stringResource(id = R.string.restart_app),
                     ),
                 ) { choice ->

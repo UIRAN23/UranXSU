@@ -90,6 +90,7 @@ data class SettingsUiState(
     val checkManagerUpdate: Boolean = true,
     val checkBetaUpdate: Boolean = true,
     val checkModuleUpdate: Boolean = true,
+    val autoUpdateKsud: Boolean = true,
     val suCompatMode: Int = 0,
     val suStatus: String = "",
     val kernelUmountStatus: String = "",
@@ -141,6 +142,7 @@ sealed interface SettingsUiAction {
     data class SetManagerUpdateCheck(val enabled: Boolean) : SettingsUiAction
     data class SetBetaUpdateCheck(val enabled: Boolean) : SettingsUiAction
     data class SetModuleUpdateCheck(val enabled: Boolean) : SettingsUiAction
+    data class SetAutoUpdateKsud(val enabled: Boolean) : SettingsUiAction
     data class SetSuCompatMode(val index: Int) : SettingsUiAction
     data class SetKernelUmount(val enabled: Boolean) : SettingsUiAction
     data class SetAutoJailbreak(val enabled: Boolean) : SettingsUiAction
@@ -387,6 +389,11 @@ class SettingsViewModel(
         updatePlatformAsync(PlatformSetting.ModuleUpdateCheck(enabled))
     }
 
+    fun handleAutoUpdateKsudChange(enabled: Boolean) {
+        mutableState.update { it.copy(autoUpdateKsud = enabled) }
+        updatePlatformAsync(PlatformSetting.AutoUpdateKsud(enabled))
+    }
+
     fun handleSuCompatModeChange(index: Int) {
         viewModelScope.launch {
             val changed = when (index) {
@@ -523,6 +530,8 @@ class SettingsViewModel(
 
             is SettingsUiAction.SetModuleUpdateCheck -> handleCheckModuleUpdateChange(action.enabled)
 
+            is SettingsUiAction.SetAutoUpdateKsud -> handleAutoUpdateKsudChange(action.enabled)
+
             is SettingsUiAction.SetSuCompatMode -> handleSuCompatModeChange(action.index)
 
             is SettingsUiAction.SetKernelUmount -> handleKernelUmountChange(action.enabled)
@@ -608,6 +617,7 @@ class SettingsViewModel(
                 checkManagerUpdate = snapshot.checkManagerUpdate,
                 checkBetaUpdate = snapshot.checkBetaUpdate,
                 checkModuleUpdate = snapshot.checkModuleUpdate,
+                autoUpdateKsud = snapshot.autoUpdateKsud,
                 autoJailbreakEnabled = snapshot.autoJailbreakEnabled,
                 useBuiltinMonoFont = snapshot.useBuiltinMonoFont,
                 useSoftReboot = snapshot.useSoftReboot,

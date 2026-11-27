@@ -1267,13 +1267,15 @@ static inline void ksu_unlock_sepolicy_legacy(void)
 #endif
 }
 
-// result is len or errno
-int ksu_dup_policydb(struct policydb *old_db, struct policydb *new_db)
+int ksu_write_policydb_snapshot(struct policydb *old_db, struct policy_file *snapshot)
 {
     struct policy_file fp = { 0 };
     void *data;
     int ret = 0;
-    int len = 0;
+    size_t len = 0;
+
+    if (!old_db || !snapshot)
+        return -EINVAL;
 
     ksu_lock_sepolicy_legacy();
 
@@ -1286,9 +1288,8 @@ int ksu_dup_policydb(struct policydb *old_db, struct policydb *new_db)
 
     data = vmalloc(len);
     if (!data) {
-        pr_err("alloc policy buffer len %d\n", len);
-        ret = -ENOMEM;
-        goto out_free_data;
+        pr_err("alloc policy buffer len %zu\n", len);
+        return -ENOMEM;
     }
 
     fp.data = data;
@@ -1299,7 +1300,8 @@ int ksu_dup_policydb(struct policydb *old_db, struct policydb *new_db)
     if (ret) {
         pr_err("sepolicy: policydb_write: %d\n", ret);
         ksu_unlock_sepolicy_legacy();
-        goto out_free_data;
+        vfree(data);
+        return ret;
     }
     len -= fp.len;
     ksu_unlock_sepolicy_legacy();
@@ -1325,25 +1327,42 @@ int ksu_dup_policydb(struct policydb *old_db, struct policydb *new_db)
 #endif
     }
 
-    // rewind fp
-    fp.data = data;
-    fp.len = len;
+    snapshot->data = data;
+    snapshot->len = len;
+    return 0;
+}
 
+int ksu_read_policydb_snapshot(const struct policy_file *snapshot, struct policydb *new_db)
+{
+    struct policy_file fp;
+    int ret;
+
+    if (!snapshot || !snapshot->data || !new_db)
+        return -EINVAL;
+
+    fp = *snapshot;
     ret = policydb_read(new_db, &fp);
     if (ret) {
         pr_err("sepolicy: policydb_read: %d\n", ret);
-        goto out_free_data;
+        return ret;
     }
 
-    new_db->len = len;
+    new_db->len = snapshot->len;
+    return (int)snapshot->len;
+}
 
-    vfree(data);
-    ret = len;
+// result is len or errno
+int ksu_dup_policydb(struct policydb *old_db, struct policydb *new_db)
+{
+    struct policy_file snapshot = { 0 };
+    int ret;
 
-    return ret;
+    ret = ksu_write_policydb_snapshot(old_db, &snapshot);
+    if (ret)
+        return ret;
 
-out_free_data:
-    vfree(data);
+    ret = ksu_read_policydb_snapshot(&snapshot, new_db);
+    vfree(snapshot.data);
     return ret;
 }
 
@@ -1358,32 +1377,46 @@ void ksu_destroy_sepolicy(struct selinux_policy *pol)
     kfree(pol);
 }
 
-struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
+int ksu_write_sepolicy_snapshot(struct selinux_policy *old_pol, struct policy_file *snapshot)
+{
+    if (!old_pol)
+        return -EINVAL;
+    return ksu_write_policydb_snapshot(&old_pol->policydb, snapshot);
+}
+
+struct selinux_policy *ksu_read_sepolicy_snapshot(struct selinux_policy *old_pol, const struct policy_file *snapshot)
 {
     int ret;
-    size_t len;
     struct selinux_policy *new_pol;
 
     new_pol = kmemdup(old_pol, sizeof(*old_pol), GFP_KERNEL);
-
     if (!new_pol) {
-        ret = -ENOMEM;
         pr_err("sepolicy: dup old pol\n");
-        goto out;
+        return ERR_PTR(-ENOMEM);
     }
     memset(&new_pol->policydb, 0, sizeof(new_pol->policydb));
 
-    ret = ksu_dup_policydb(&old_pol->policydb, &new_pol->policydb);
-
+    ret = ksu_read_policydb_snapshot(snapshot, &new_pol->policydb);
     if (ret < 0) {
-        goto out_free_policydb;
+        kfree(new_pol);
+        return ERR_PTR(ret);
     }
 
     return new_pol;
+}
 
-out_free_policydb:
-    kfree(new_pol);
-out:
-    return ERR_PTR(ret);
+struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol)
+{
+    struct policy_file snapshot = { 0 };
+    struct selinux_policy *new_pol;
+    int ret;
+
+    ret = ksu_write_sepolicy_snapshot(old_pol, &snapshot);
+    if (ret)
+        return ERR_PTR(ret);
+
+    new_pol = ksu_read_sepolicy_snapshot(old_pol, &snapshot);
+    vfree(snapshot.data);
+    return new_pol;
 }
 #endif

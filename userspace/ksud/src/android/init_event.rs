@@ -118,6 +118,9 @@ pub fn on_post_fs_data() -> Result<()> {
     // Stage built-in mount engine and load NoMount driver before module scripts run.
     crate::android::mount::on_post_fs_data_early();
 
+    // Stage built-in NoShot before built-in Zygisk spawns so it is ready if enabled.
+    crate::android::noshot::on_post_fs_data();
+
     // Clean up or bootstrap built-in Zygisk before module post-fs-data scripts run.
     if let Err(e) = crate::android::builtin_zygisk::cleanup_disabled() {
         warn!("built-in zygisk cleanup failed: {e}");
@@ -234,6 +237,7 @@ pub fn on_boot_completed() {
         }
         crate::android::susfs::lkm::on_boot_completed();
         crate::android::susfs::init_event::on_boot_completed();
+        crate::android::noshot::on_boot_completed();
     }
 }
 

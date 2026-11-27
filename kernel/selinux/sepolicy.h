@@ -5,6 +5,8 @@
 
 #include "ss/policydb.h"
 
+int ksu_write_policydb_snapshot(struct policydb *old_db, struct policy_file *snapshot);
+int ksu_read_policydb_snapshot(const struct policy_file *snapshot, struct policydb *new_db);
 int ksu_dup_policydb(struct policydb *old_db, struct policydb *new_db);
 void ksu_destroy_policydb(struct policydb *db);
 
@@ -14,9 +16,17 @@ u32 ksu_get_legacy_policy_generation(void);
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
+/* Keep the source locked until the last read and vfree(snapshot->data). */
+int ksu_write_sepolicy_snapshot(struct selinux_policy *old_pol, struct policy_file *snapshot);
+struct selinux_policy *ksu_read_sepolicy_snapshot(struct selinux_policy *old_pol, const struct policy_file *snapshot);
 struct selinux_policy *ksu_dup_sepolicy(struct selinux_policy *old_pol);
 
 void ksu_destroy_sepolicy(struct selinux_policy *orig);
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
+/* The caller excludes backup retention and owns the detached policy. */
+struct selinux_policy *ksu_detach_backup_sepolicy(void);
 #endif
 
 // Operation on types

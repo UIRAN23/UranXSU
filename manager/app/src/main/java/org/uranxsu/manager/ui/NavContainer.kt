@@ -92,6 +92,7 @@ import org.uranxsu.manager.ui.screen.TemplateEditorScreen
 import org.uranxsu.manager.ui.screen.UmountManagerScreen
 import org.uranxsu.manager.ui.screen.about.AboutScreen
 import org.uranxsu.manager.ui.screen.about.OpenSourceLicenseScreen
+import org.uranxsu.manager.ui.screen.health.SystemHealthScreen
 import org.uranxsu.manager.ui.screen.kernelFlash.KernelFlashScreen
 import org.uranxsu.manager.ui.screen.main.MainScreen
 import org.uranxsu.manager.ui.screen.moduleRepo.AddRepositoryScreen
@@ -99,6 +100,7 @@ import org.uranxsu.manager.ui.screen.moduleRepo.ModuleRepoScreen
 import org.uranxsu.manager.ui.screen.moduleRepo.OnlineModuleDetailScreen
 import org.uranxsu.manager.ui.screen.mount.MountSettingsScreen
 import org.uranxsu.manager.ui.screen.mount.NoMountManagerScreen
+import org.uranxsu.manager.ui.screen.noshot.NoShotScreen
 import org.uranxsu.manager.ui.screen.susfs.SuSFSConfigScreen
 import org.uranxsu.manager.ui.screen.themeSettings.CustomTextScreen
 import org.uranxsu.manager.ui.screen.themeSettings.ThemeSettingsScreen
@@ -625,6 +627,28 @@ fun NavContainer(
                     useBlur = useBlur,
                 ) {
                     BuiltinZygiskScreen()
+                }
+            }
+            entry<Route.NoShot>(swipeDismiss = swipeBackDirection) { key ->
+                ManagerNavEntry(
+                    interceptPredictiveBack = interceptPredictiveBack,
+                    onBack = onBack,
+                    themeConfig = themeConfig,
+                    backgroundRenderState = backgroundRenderState,
+                    useBlur = useBlur,
+                ) {
+                    NoShotScreen()
+                }
+            }
+            entry<Route.SystemHealth>(swipeDismiss = swipeBackDirection) { key ->
+                ManagerNavEntry(
+                    interceptPredictiveBack = interceptPredictiveBack,
+                    onBack = onBack,
+                    themeConfig = themeConfig,
+                    backgroundRenderState = backgroundRenderState,
+                    useBlur = useBlur,
+                ) {
+                    SystemHealthScreen()
                 }
             }
             entry<Route.UmountManager>(swipeDismiss = swipeBackDirection) { key ->

@@ -16,7 +16,6 @@ int sus_mount_prefix_commit(char dst[][SUS_MOUNT_KEEP_LEN], int n);
 int sus_mount_prefix_snapshot(char dst[][SUS_MOUNT_KEEP_LEN]);
 int sus_mount_prefix_count(void);
 bool sus_mount_prefix_match(const char *s);
-bool sus_mount_prefix_match_root(const char *s);
 const char *sus_mount_prefix_default(void);
 
 #endif /* __SUS_MOUNT_PREFIX_H */

@@ -33,9 +33,11 @@ import org.uranxsu.manager.domain.model.LkmSelection
  * @date 2023/1/1.
  */
 class KsuCliRepository(context: Context) {
-    private companion object {
-        const val TAG = "KsuCli"
-        val MODULE_ID_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9._-]+$")
+    companion object {
+        private const val TAG = "KsuCli"
+        private val MODULE_ID_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9._-]+$")
+
+        fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
     }
 
     private val nativeLibraryDir = context.applicationInfo.nativeLibraryDir
@@ -121,8 +123,6 @@ class KsuCliRepository(context: Context) {
     } else {
         ShellUtils.fastCmdResult(getRootShell(globalMnt), "${getKsuDaemonPath()} $args")
     }
-
-    private fun shellQuote(value: String): String = "'${value.replace("'", "'\"'\"'")}'"
 
     data class DynamicManagerCliConfig(
         val size: Int = 0,

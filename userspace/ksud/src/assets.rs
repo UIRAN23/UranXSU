@@ -69,9 +69,11 @@ mod android {
                 || file == "waitsys"
                 || file == "susfs_insmod"
                 || file == "nm"
+                || file.starts_with("noshot")
                 || file.starts_with("zygisk")
                 || file.starts_with("libzygisk")
                 || file.ends_with(".ko")
+                || file.ends_with(".ko.xz")
             {
                 // don't extract internal executables, auxiliary tools, and kernel modules
                 continue;
@@ -105,27 +107,54 @@ pub use android::*;
 #[cfg(all(target_arch = "x86_64", target_os = "android"))]
 #[derive(RustEmbed)]
 #[folder = "bin/x86_64"]
+#[exclude = "*.ko"]
+#[exclude = "*.ko.xz"]
+#[compression = "deflate"]
+struct Asset;
+
+#[cfg(all(target_arch = "x86_64", target_os = "android"))]
+#[derive(RustEmbed)]
+#[folder = "bin/x86_64"]
+#[include = "*.ko.xz"]
+#[include = "*.ko"]
+struct AssetKo;
+
+#[cfg(all(target_arch = "aarch64", target_os = "android"))]
+#[derive(RustEmbed)]
+#[folder = "bin/aarch64"]
+#[exclude = "*.ko"]
+#[exclude = "*.ko.xz"]
 #[compression = "deflate"]
 struct Asset;
 
 #[cfg(all(target_arch = "aarch64", target_os = "android"))]
 #[derive(RustEmbed)]
 #[folder = "bin/aarch64"]
+#[include = "*.ko.xz"]
+#[include = "*.ko"]
+struct AssetKo;
+
+#[cfg(all(target_arch = "arm", target_os = "android"))]
+#[derive(RustEmbed)]
+#[folder = "bin/arm"]
+#[exclude = "*.ko"]
+#[exclude = "*.ko.xz"]
 #[compression = "deflate"]
 struct Asset;
 
 #[cfg(all(target_arch = "arm", target_os = "android"))]
 #[derive(RustEmbed)]
 #[folder = "bin/arm"]
-#[compression = "deflate"]
-struct Asset;
+#[include = "*.ko.xz"]
+#[include = "*.ko"]
+struct AssetKo;
 
 #[cfg(all(target_arch = "arm", target_os = "android"))]
 #[derive(RustEmbed)]
 #[folder = "bin/aarch64"]
+#[include = "*.ko.xz"]
 #[include = "*.ko"]
-#[compression = "deflate"]
-struct AssetAarch64;
+struct AssetAarch64Ko;
 
 #[cfg(all(target_arch = "arm", target_os = "android"))]
 fn use_arm64_ko() -> bool {
@@ -135,15 +164,33 @@ fn use_arm64_ko() -> bool {
 #[cfg(all(target_arch = "riscv64", target_os = "android"))]
 #[derive(RustEmbed)]
 #[folder = "bin/riscv64"]
+#[exclude = "*.ko"]
+#[exclude = "*.ko.xz"]
 #[compression = "deflate"]
 struct Asset;
+
+#[cfg(all(target_arch = "riscv64", target_os = "android"))]
+#[derive(RustEmbed)]
+#[folder = "bin/riscv64"]
+#[include = "*.ko.xz"]
+#[include = "*.ko"]
+struct AssetKo;
 
 // If not Android, ie. macos, linux, windows, include all architectures.
 #[cfg(not(target_os = "android"))]
 #[derive(RustEmbed)]
 #[folder = "bin"]
+#[exclude = "*.ko"]
+#[exclude = "*.ko.xz"]
 #[compression = "deflate"]
 struct Asset;
+
+#[cfg(not(target_os = "android"))]
+#[derive(RustEmbed)]
+#[folder = "bin"]
+#[include = "*.ko.xz"]
+#[include = "*.ko"]
+struct AssetKo;
 
 pub fn list_supported_kmi() -> std::vec::Vec<std::string::String> {
     list_kmi_with_suffix("_kernelsu.ko")
@@ -159,31 +206,50 @@ pub fn list_supported_nomount_kmi() -> std::vec::Vec<std::string::String> {
 
 pub fn list_kmi_with_suffix(suffix: &str) -> std::vec::Vec<std::string::String> {
     let mut list = Vec::new();
-    let assets = <Asset as RustEmbed>::iter();
+    let xz_suffix = format!("{suffix}.xz");
+    let assets = <AssetKo as RustEmbed>::iter();
     #[cfg(all(target_arch = "arm", target_os = "android"))]
     let assets = if use_arm64_ko() {
-        <AssetAarch64 as RustEmbed>::iter()
+        <AssetAarch64Ko as RustEmbed>::iter()
     } else {
         assets
     };
     for file in assets {
-        if let Some(kmi) = file.strip_suffix(suffix) {
+        if let Some(kmi) = file
+            .strip_suffix(&xz_suffix)
+            .or_else(|| file.strip_suffix(suffix))
+        {
             list.push(kmi.to_string());
         }
     }
     list.sort();
+    list.dedup();
     list
 }
 
-pub fn get_asset(name: &str) -> Result<std::borrow::Cow<'static, [u8]>> {
+fn get_ko_asset(name: &str) -> Option<rust_embed::EmbeddedFile> {
     #[cfg(all(target_arch = "arm", target_os = "android"))]
-    let asset = if name.ends_with(".ko") && use_arm64_ko() {
-        AssetAarch64::get(name)
-    } else {
-        Asset::get(name)
-    };
-    #[cfg(not(all(target_arch = "arm", target_os = "android")))]
-    let asset = Asset::get(name);
-    let asset = asset.ok_or_else(|| anyhow::anyhow!("asset not found: {name}"))?;
+    if use_arm64_ko() {
+        return AssetAarch64Ko::get(name);
+    }
+    AssetKo::get(name)
+}
+
+pub fn get_asset(name: &str) -> Result<std::borrow::Cow<'static, [u8]>> {
+    if name.ends_with(".ko") {
+        let xz_name = format!("{name}.xz");
+        if let Some(asset) = get_ko_asset(&xz_name) {
+            use std::io::Read;
+            let mut reader = lzma_rust2::XzReader::new(std::io::Cursor::new(asset.data), true);
+            let mut out = Vec::new();
+            reader.read_to_end(&mut out)?;
+            return Ok(std::borrow::Cow::Owned(out));
+        }
+        let asset =
+            get_ko_asset(name).ok_or_else(|| anyhow::anyhow!("asset not found: {name}"))?;
+        return Ok(asset.data);
+    }
+
+    let asset = Asset::get(name).ok_or_else(|| anyhow::anyhow!("asset not found: {name}"))?;
     Ok(asset.data)
 }

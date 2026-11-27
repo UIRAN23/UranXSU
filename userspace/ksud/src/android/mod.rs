@@ -9,6 +9,7 @@ mod ksucalls;
 mod late_load;
 mod module;
 pub mod mount;
+pub mod noshot;
 mod preinit;
 mod profile;
 pub(crate) mod resetprop;

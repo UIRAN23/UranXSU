@@ -6,13 +6,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.uranxsu.manager.BuildConfig
+import org.uranxsu.manager.Natives
+import org.uranxsu.manager.data.kernel.KernelRepository
 import org.uranxsu.manager.data.network.NetworkRequestRepository
 import org.uranxsu.manager.domain.model.ManagerApkSource
 import org.uranxsu.manager.domain.model.ManagerUpdateChannel
 import org.uranxsu.manager.domain.model.ManagerUpdateInfo
+import org.uranxsu.manager.domain.model.UpdateImpact
 
 class ManagerUpdateRepository(
     private val networkRequestRepository: NetworkRequestRepository,
+    private val kernelRepository: KernelRepository,
 ) {
     private companion object {
         const val UPDATE_CALL_TIMEOUT_SECONDS = 8L
@@ -41,12 +45,18 @@ class ManagerUpdateRepository(
         val changelog = release.optString("body")
         val assets = release.optJSONArray("assets") ?: return@withContext null
         val candidates = mutableListOf<ManagerApkCandidate>()
+        var metaUrl: String? = null
 
         for (index in 0 until assets.length()) {
             val asset = assets.optJSONObject(index) ?: continue
-            val parsed = parseApkName(asset.optString("name")) ?: continue
+            val assetName = asset.optString("name")
             val downloadUrl = asset.optString("browser_download_url")
             if (downloadUrl.isBlank()) continue
+            if (assetName == "update-meta.json") {
+                metaUrl = downloadUrl
+                continue
+            }
+            val parsed = parseApkName(assetName) ?: continue
 
             candidates += ManagerApkCandidate(
                 versionName = parsed.versionName,
@@ -57,8 +67,53 @@ class ManagerUpdateRepository(
             )
         }
 
-        return@withContext selectCandidate(candidates, supportedAbis)
-            ?.toUpdateInfo(ManagerUpdateChannel.STABLE, changelog)
+        val selected = selectCandidate(candidates, supportedAbis) ?: return@withContext null
+        val metaJson = metaUrl?.let { requestJson(it) }
+        val remoteLkmHash = metaJson?.optString("lkmHash")?.takeIf { it.isNotBlank() && it != "unknown" }
+        val remoteUserspaceHash = metaJson?.optString("userspaceHash")
+            ?.takeIf { it.isNotBlank() && it != "unknown" }
+        val kernelStatus = runCatching { kernelRepository.getStatus() }.getOrNull()
+        val impact = classifyImpact(
+            lkmMode = kernelStatus?.lkmMode == true,
+            runtimeLkmHash = kernelStatus?.runtimeLkmHash,
+            remoteLkmHash = remoteLkmHash,
+            remoteUserspaceHash = remoteUserspaceHash,
+        )
+
+        return@withContext selected.toUpdateInfo(
+            channel = ManagerUpdateChannel.STABLE,
+            changelog = changelog,
+            updateImpact = impact,
+            remoteLkmHash = remoteLkmHash,
+            remoteUserspaceHash = remoteUserspaceHash,
+        )
+    }
+
+    private fun classifyImpact(
+        lkmMode: Boolean,
+        runtimeLkmHash: String?,
+        remoteLkmHash: String?,
+        remoteUserspaceHash: String?,
+    ): UpdateImpact {
+        if (lkmMode && remoteLkmHash != null &&
+            (runtimeLkmHash == null || runtimeLkmHash != remoteLkmHash)
+        ) {
+            return UpdateImpact.LKM_UPDATE
+        }
+        val bundledUserspace = BuildConfig.BUNDLED_USERSPACE_HASH
+        if (remoteUserspaceHash != null &&
+            bundledUserspace != "unknown" &&
+            remoteUserspaceHash != bundledUserspace
+        ) {
+            return UpdateImpact.KSUD_SYNC
+        }
+        if (runCatching { Natives.isManager }.getOrDefault(false) &&
+            BuildConfig.VERSION_CODE > 0
+        ) {
+            // Legacy releases without update-meta.json behave as APK updates.
+            return UpdateImpact.APK_ONLY
+        }
+        return UpdateImpact.APK_ONLY
     }
 
     suspend fun checkBetaUpdate(): ManagerUpdateInfo? = withContext(Dispatchers.IO) {
@@ -182,6 +237,9 @@ class ManagerUpdateRepository(
         fun toUpdateInfo(
             channel: ManagerUpdateChannel,
             changelog: String = "",
+            updateImpact: UpdateImpact = UpdateImpact.APK_ONLY,
+            remoteLkmHash: String? = null,
+            remoteUserspaceHash: String? = null,
         ) = ManagerUpdateInfo(
             channel = channel,
             versionCode = versionCode,
@@ -190,6 +248,9 @@ class ManagerUpdateRepository(
             fileName = fileName,
             source = source,
             changelog = changelog,
+            updateImpact = updateImpact,
+            remoteLkmHash = remoteLkmHash,
+            remoteUserspaceHash = remoteUserspaceHash,
         )
     }
 }

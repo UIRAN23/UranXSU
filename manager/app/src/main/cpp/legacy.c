@@ -35,4 +35,9 @@ struct ksu_version_info legacy_get_info()
     return (struct ksu_version_info){version, flags};
 }
 
+bool legacy_grant_root(void)
+{
+    return ksuctl(CMD_GRANT_ROOT, nullptr, nullptr);
+}
+
 

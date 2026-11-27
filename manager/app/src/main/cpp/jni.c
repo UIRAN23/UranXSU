@@ -683,3 +683,22 @@ Java_org_uranxsu_manager_magica_AppZygotePreload_forkDontCareAndExecKsud(JNIEnv 
     GetEnvironment()->ReleaseStringUTFChars(env, ksud_path, path);
     GetEnvironment()->ReleaseStringUTFChars(env, pkg_name, pkg);
 }
+
+int ksu_check_ksud_integrity(const char *apk_ksud_path);
+int ksu_repair_ksud(const char *apk_ksud_path);
+
+NativeBridge(checkKsudIntegrity, jint, jstring apkKsudPath) {
+    if (!apkKsudPath) return -2;
+    const char *path = GetEnvironment()->GetStringUTFChars(env, apkKsudPath, nullptr);
+    int rc = ksu_check_ksud_integrity(path);
+    GetEnvironment()->ReleaseStringUTFChars(env, apkKsudPath, path);
+    return (jint)rc;
+}
+
+NativeBridge(repairKsud, jint, jstring apkKsudPath) {
+    if (!apkKsudPath) return -2;
+    const char *path = GetEnvironment()->GetStringUTFChars(env, apkKsudPath, nullptr);
+    int rc = ksu_repair_ksud(path);
+    GetEnvironment()->ReleaseStringUTFChars(env, apkKsudPath, path);
+    return (jint)rc;
+}

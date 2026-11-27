@@ -101,6 +101,22 @@ mod android {
     pub const BUILTIN_ZYGISK_DIR: &str = concatcp!(WORKING_DIR, "zygisk/");
     pub const BUILTIN_ZYGISK_WORK_DIR: &str = "/data/system/nyazygisk";
 
+    // Built-in NoShot (per-app FLAG_SECURE remover)
+    pub const NOSHOT_DIR: &str = concatcp!(WORKING_DIR, "noshot/");
+    pub const NOSHOT_ENABLED_FLAG: &str = concatcp!(NOSHOT_DIR, "enabled");
+    pub const NOSHOT_ALLOW_LIST: &str = concatcp!(NOSHOT_DIR, "allow.list");
+    pub const NOSHOT_SETTINGS_CONF: &str = concatcp!(NOSHOT_DIR, "settings.conf");
+    pub const NOSHOT_DISABLE_SYSTEM: &str = concatcp!(NOSHOT_DIR, "disable_system");
+    pub const NOSHOT_MODE_COPY: &str = concatcp!(NOSHOT_DIR, "mode");
+    pub const NOSHOT_ZYGISK_DIR: &str = concatcp!(NOSHOT_DIR, "zygisk/");
+    pub const NOSHOT_SYSTEM_MODE: &str = "/data/system/noshot_mode";
+    pub const NOSHOT_SYSTEM_PLAN: &str = "/data/system/noshot_plan";
+    pub const NOSHOT_SYSTEM_STATE: &str = "/data/system/noshot_state";
+    pub const NOSHOT_SYSTEM_GUARD: &str = "/data/system/noshot_guard";
+    pub const NOSHOT_SYSTEM_ATTEMPT: &str = "/data/system/noshot_attempt";
+    pub const NOSHOT_SYSTEM_DISABLE: &str = "/data/system/noshot_disable";
+    pub const NOSHOT_STANDALONE_DIR: &str = "/data/adb/modules/noshot_zygisk";
+
     #[derive(Serialize)]
     pub struct MountInfo {
         pub path: String,

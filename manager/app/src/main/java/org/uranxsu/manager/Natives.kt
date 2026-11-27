@@ -174,6 +174,18 @@ object Natives {
 
     external fun getSuperuserCount(): Int
 
+    /**
+     * Compare bundled `libksud.so` at [apkKsudPath] with `/data/adb/ksud`.
+     * @return 0 = up-to-date, 1 = mismatch/needs sync, 2 = missing, <0 = native/root error.
+     */
+    external fun checkKsudIntegrity(apkKsudPath: String): Int
+
+    /**
+     * Atomically install/sync bundled `libksud.so` to `/data/adb/ksud` and repair core symlinks.
+     * @return 0 = success, <0 = error.
+     */
+    external fun repairKsud(apkKsudPath: String): Int
+
     private const val NON_ROOT_DEFAULT_PROFILE_KEY = "$"
     private const val NOBODY_UID = 9999
 

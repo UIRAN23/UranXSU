@@ -31,6 +31,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.koin.android.ext.android.inject
 import org.uranxsu.manager.BuildConfig
+import org.uranxsu.manager.Natives
 import org.uranxsu.manager.R
 import org.uranxsu.manager.data.module.registry.DownloadVerificationException
 import org.uranxsu.manager.data.module.registry.DownloadVerifier
@@ -38,6 +39,7 @@ import org.uranxsu.manager.data.module.registry.RegistryDownloadStore
 import org.uranxsu.manager.data.module.registry.RegistryUrls
 import org.uranxsu.manager.data.settings.SettingsPlatformRepository
 import org.uranxsu.manager.data.update.ManagerUpdateRepository
+import org.uranxsu.manager.data.update.RootApkInstaller
 import org.uranxsu.manager.data.update.ZipRangeArchive
 import org.uranxsu.manager.domain.model.DownloadStatus
 import org.uranxsu.manager.domain.model.DownloadVerificationFailure
@@ -48,6 +50,7 @@ class DownloadService : Service() {
     private val downloadRepository: DownloadRepository by inject()
     private val httpClient: OkHttpClient by inject()
     private val managerUpdateRepository: ManagerUpdateRepository by inject()
+    private val rootApkInstaller: RootApkInstaller by inject()
     private val settingsRepository: SettingsPlatformRepository by inject()
 
     companion object {
@@ -318,10 +321,17 @@ class DownloadService : Service() {
                 downloadRepository.markCompleted(id, uri.toString())
 
                 notificationManager.cancel(id)
-                notificationManager.notify(
-                    COMPLETION_NOTIFICATION_ID_BASE + id,
-                    buildApkCompletionNotification(id, target),
-                )
+                val autoInstalled = if (runCatching { Natives.isManager }.getOrDefault(false)) {
+                    rootApkInstaller.install(target).isSuccess
+                } else {
+                    false
+                }
+                if (!autoInstalled) {
+                    notificationManager.notify(
+                        COMPLETION_NOTIFICATION_ID_BASE + id,
+                        buildApkCompletionNotification(id, target),
+                    )
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

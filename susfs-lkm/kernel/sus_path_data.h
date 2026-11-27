@@ -25,7 +25,5 @@ int sus_path_rule_facts_inode(struct inode *inode,
 			      struct sus_path_rule_facts *facts);
 int sus_path_rule_facts_dirent(u64 ino, const char *name,
 			       struct sus_path_rule_facts *facts);
-int sus_path_rule_facts_dirent_at(struct inode *dir, u64 ino, const char *name,
-				  struct sus_path_rule_facts *facts);
 
 #endif /* __SUS_PATH_DATA_H */

@@ -36,7 +36,7 @@ class ModulePreferencesRepository(
         showMoreModuleInfo = settings.getBoolean(PREF_SHOW_MORE_INFO, false),
     )
 
-    private companion object {
+    companion object {
         const val PREF_SORT_ENABLED = "module_sort_enabled_first"
         const val PREF_SORT_ACTION = "module_sort_action_first"
         const val PREF_SHOW_MORE_INFO = "show_more_module_info"
